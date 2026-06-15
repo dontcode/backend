@@ -1,0 +1,59 @@
+{
+    "name": "@dontcode/backend",
+    "version": "0.1.0",
+    "description": "Public SDK for DontCode Backend. A thin, typed proxy over the v1 HTTP gateway.",
+    "keywords": [
+        "dontcode",
+        "backend",
+        "sdk",
+        "byoc",
+        "auth",
+        "database",
+        "storage"
+    ],
+    "homepage": "https://github.com/dontcode/backend#readme",
+    "bugs": {
+        "url": "https://github.com/dontcode/backend/issues"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/dontcode/backend.git"
+    },
+    "license": "ISC",
+    "author": "dontcode",
+    "type": "module",
+    "main": "dist/index.cjs",
+    "module": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "exports": {
+        ".": {
+            "types": "./dist/index.d.ts",
+            "import": "./dist/index.js",
+            "require": "./dist/index.cjs",
+            "default": "./dist/index.js"
+        }
+    },
+    "sideEffects": false,
+    "engines": {
+        "node": ">=18"
+    },
+    "scripts": {
+        "build": "tsup",
+        "test": "npm run build && node --test tests/*.test.mjs",
+        "prepublishOnly": "npm run build"
+    },
+    "files": [
+        "dist"
+    ],
+    "devDependencies": {
+        "@trivago/prettier-plugin-sort-imports": "6.0.0",
+        "@types/node": "24.10.1",
+        "prettier": "3.6.2",
+        "prettier-plugin-tailwindcss": "0.7.1",
+        "tsup": "8.5.1",
+        "typescript": "5.9.3"
+    },
+    "publishConfig": {
+        "access": "public"
+    }
+}

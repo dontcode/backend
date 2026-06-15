@@ -1,0 +1,12 @@
+{
+  "useTabs": false,
+  "singleQuote": true,
+  "tabWidth": 4,
+  "trailingComma": "es5",
+  "printWidth": 100,
+  "semi": false,
+  "plugins": [
+    "@trivago/prettier-plugin-sort-imports",
+    "prettier-plugin-tailwindcss"
+  ]
+}
