@@ -7,6 +7,11 @@
  * Note: many "one more step" auth states (signup needing email verification,
  * login returning `mfa_required`) are 2xx successes, NOT errors; inspect the
  * resolved value for those. Errors are reserved for actual failures.
+ *
+ * Transport failures (no HTTP response at all) also surface as a DontCodeError
+ * so callers have one error type: a timeout is status 408 / code `Timeout`, and
+ * any other network failure is status 0 / code `NetworkError`. Neither is a
+ * `401`, so a guard can distinguish "backend unavailable" from "signed out".
  */
 export interface DontCodeErrorBody {
     error?: string

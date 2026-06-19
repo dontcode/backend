@@ -1,6 +1,7 @@
 import { AuthApi } from './auth'
 import { createDb, type DbClient } from './db'
 import { Transport } from './http'
+import type { SessionOptions } from './session'
 import { createStorage, type StorageClient } from './storage'
 
 const DEFAULT_BASE_URL = 'https://backend.dontcode.co'
@@ -13,6 +14,12 @@ export interface DontCodeClientOptions {
     /** Gateway origin. Defaults to `process.env.DONTCODE_API_URL`, then to
      *  `https://backend.dontcode.co`. */
     baseUrl?: string
+    /** Per-request network timeout in ms. Defaults to 10_000; `0` disables it.
+     *  Without one, a slow gateway can hang a request for the full socket
+     *  timeout, the worst case for an auth guard. */
+    timeoutMs?: number
+    /** Caching + timeout policy for `auth.getSession` / `auth.sessionFromCookies`. */
+    session?: SessionOptions
 }
 
 export interface DontCodeClient {
@@ -45,10 +52,10 @@ export function dontcode(options: DontCodeClientOptions = {}): DontCodeClient {
         ''
     )
 
-    const transport = new Transport({ apiKey, baseUrl })
+    const transport = new Transport({ apiKey, baseUrl, timeoutMs: options.timeoutMs })
 
     return {
-        auth: new AuthApi(transport),
+        auth: new AuthApi(transport, options.session),
         db: createDb(transport),
         storage: createStorage(transport),
     }

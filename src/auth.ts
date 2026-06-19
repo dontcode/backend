@@ -1,4 +1,13 @@
 import { Transport } from './http'
+import { readSessionToken } from './cookies'
+import {
+    SessionVerifier,
+    decodeAccessToken,
+    type DecodedSession,
+    type GetSessionInput,
+    type SessionOptions,
+    type SessionResult,
+} from './session'
 import type {
     ForgotPasswordInput,
     LoginInput,
@@ -75,9 +84,14 @@ export class MfaApi {
  */
 export class AuthApi {
     readonly mfa: MfaApi
+    private readonly sessions: SessionVerifier
 
-    constructor(private readonly transport: Transport) {
+    constructor(
+        private readonly transport: Transport,
+        sessionOptions?: SessionOptions
+    ) {
         this.mfa = new MfaApi(transport)
+        this.sessions = new SessionVerifier(this, sessionOptions)
     }
 
     /** Create an account. If the project requires email verification the
@@ -102,9 +116,52 @@ export class AuthApi {
         })
     }
 
-    /** Resolve the signed-in user from their access token, or `{ user: null }`. */
-    me(input: { accessToken: string }): Promise<MeResult> {
-        return this.transport.json<MeResult>(`${AUTH_BASE}/me`, {}, { accessToken: input.accessToken })
+    /** Resolve the signed-in user from their access token, or `{ user: null }`.
+     *  This is a network round-trip; for a per-navigation guard prefer
+     *  `getSession`, which can answer offline and caches verified results. */
+    me(input: { accessToken: string; timeoutMs?: number }): Promise<MeResult> {
+        return this.transport.json<MeResult>(
+            `${AUTH_BASE}/me`,
+            {},
+            { accessToken: input.accessToken, timeoutMs: input.timeoutMs }
+        )
+    }
+
+    /**
+     * Resolve an access token into a session for a route guard, the one call
+     * that replaces "hit `me` on every navigation". Two modes:
+     *
+     *   - `'optimistic'` (default): decode the token locally and trust its
+     *     claims. Zero network, zero stall. The right default for gating page
+     *     loads. It does NOT verify the signature and will not notice a
+     *     server-side revocation until the token's own `exp`.
+     *   - `'verified'`: confirm against the gateway's `me`, cached for a short
+     *     TTL with a hard timeout. Use it before sensitive actions. On a
+     *     timeout/outage it returns `status: 'unavailable'` with the optimistic
+     *     user, so you choose whether to fail open rather than the SDK guessing.
+     *
+     * See the BYOC docs ("Sessions") for the full reasoning and best practices.
+     */
+    getSession(input: GetSessionInput): Promise<SessionResult> {
+        return this.sessions.getSession(input)
+    }
+
+    /** Read the access token from a `Cookie` request header and resolve it, in
+     *  one call. `name` defaults to `dc_access_token`. Returns the anonymous
+     *  session when no cookie is present. */
+    sessionFromCookies(
+        cookieHeader: string | null | undefined,
+        options: { mode?: GetSessionInput['mode']; cookieName?: string } = {}
+    ): Promise<SessionResult> {
+        const token = readSessionToken(cookieHeader, options.cookieName)
+        if (!token) return Promise.resolve({ status: 'anonymous', user: null, verified: false })
+        return this.sessions.getSession({ accessToken: token, mode: options.mode })
+    }
+
+    /** Decode an access token's claims locally without a network call or any
+     *  signature check. Convenience re-export of `decodeAccessToken`. */
+    decodeToken(token: string): DecodedSession | null {
+        return decodeAccessToken(token)
     }
 
     /** Confirm the 6-digit code emailed at signup. */
