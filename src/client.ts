@@ -33,7 +33,7 @@ function fromEnv(name: string): string | undefined {
  * a single project; there is nothing else to configure.
  *
  * ```ts
- * import { dontcode } from '@dontcode/backend'
+ * import { dontcode } from '@dontcode2/backend'
  * const client = dontcode() // reads DONTCODE_API_KEY
  * await client.auth.signup({ email, password, role: 'editor' })
  * ```

@@ -1,5 +1,5 @@
 {
-    "name": "@dontcode/backend",
+    "name": "@dontcode2/backend",
     "version": "0.1.0",
     "description": "Public SDK for DontCode Backend. A thin, typed proxy over the v1 HTTP gateway.",
     "keywords": [

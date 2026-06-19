@@ -1,4 +1,4 @@
-# @dontcode/backend
+# @dontcode2/backend
 
 The public SDK for the [DontCode](https://www.dontcode.co) backend: a thin, typed
 proxy over the v1 HTTP gateway. Auth, database, and file storage for an app you host
@@ -10,8 +10,8 @@ raw HTTP at any time without platform-side changes.
 ## Install
 
 ```bash
-pnpm add @dontcode/backend
-# or: npm i @dontcode/backend
+pnpm add @dontcode2/backend
+# or: npm i @dontcode2/backend
 ```
 
 Works in Node 18+ and the browser; it uses the global `fetch`, with no extra runtime
@@ -20,7 +20,7 @@ dependencies.
 ## Quick start
 
 ```ts
-import { dontcode } from '@dontcode/backend'
+import { dontcode } from '@dontcode2/backend'
 
 // apiKey defaults to process.env.DONTCODE_API_KEY,
 // baseUrl  defaults to process.env.DONTCODE_API_URL (then backend.dontcode.co).
@@ -139,7 +139,7 @@ const { url: putUrl } = await priv.presignUpload('big.zip', 'application/zip')
 Every non-2xx response throws a `DontCodeError`:
 
 ```ts
-import { DontCodeError, isDontCodeError } from '@dontcode/backend'
+import { DontCodeError, isDontCodeError } from '@dontcode2/backend'
 
 try {
     await client.auth.login({ email, password })
