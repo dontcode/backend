@@ -45,6 +45,59 @@ const client = dontcode({
 If no key is set in either place, requests fail naturally with the gateway's
 `401 Missing API key`.
 
+## Local development (the mock gateway)
+
+You don't need the hosted backend to build against this SDK. Because the SDK is a
+thin proxy over a fixed wire protocol, the package ships a local server that speaks
+that same protocol — auth, database, and storage — so you can develop fully offline:
+
+```bash
+npx dontcode-mock                 # http://localhost:4000, state persisted to ./.dontcode-mock
+```
+
+Then point your app at it — no code changes, just config:
+
+```bash
+DONTCODE_API_URL=http://localhost:4000
+DONTCODE_API_KEY=dc_local_dev     # any dc_… value is accepted by default
+```
+
+Apply your schema the same way you would in production, then use the client normally:
+
+```ts
+const client = dontcode() // reads the env vars above
+await client.db.migrate({ sql: 'CREATE TABLE IF NOT EXISTS notes (id serial primary key, body text);' })
+await client.db.notes.insert({ body: 'hello from the mock' })
+```
+
+How faithful is it? The database runs your real DDL and the SDK's real structured
+queries against in-process Postgres ([PGlite](https://pglite.dev)), including the
+`409` conflict signal; auth issues real JWT-shaped tokens that `decodeAccessToken`
+and `getSession` read exactly as in production; storage stores real files and serves
+them over the same server. It is a **development tool** — passwords are stored in
+plaintext, tokens are unsigned, and there is no rate limiting — so never expose it
+to an untrusted network.
+
+PGlite ships as an optional dependency, so `npx dontcode-mock` works out of the box.
+(If your install skipped optional deps, add it: `pnpm add -D @electric-sql/pglite`.)
+
+**Useful flags:** `--port <n>`, `--data-dir <dir>`, `--ephemeral` (in-memory, starts
+empty each run — ideal for tests), `--api-key <key>` (require exactly that key).
+Run `dontcode-mock --help` for the full list.
+
+You can also drive it programmatically — handy for integration tests that need a
+clean backend per run:
+
+```ts
+import { startMockServer } from '@dontcode2/backend/mock'
+import { dontcode } from '@dontcode2/backend'
+
+const mock = await startMockServer({ dataDir: null }) // ephemeral
+const client = dontcode({ baseUrl: mock.url, apiKey: 'dc_test' })
+// … exercise the client …
+await mock.close()
+```
+
 ## Auth
 
 The API key (`Authorization: Bearer dc_…`) identifies your **project** and is sent on
