@@ -3,6 +3,9 @@ import { defineConfig } from 'tsup'
 export default defineConfig({
     entry: {
         index: 'src/index.ts',
+        node: 'src/node.ts',
+        cli: 'src/cli.ts',
+        'mcp/index': 'src/mcp/index.ts',
         'mock/index': 'src/mock/index.ts',
         'mock/cli': 'src/mock/cli.ts',
     },

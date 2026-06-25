@@ -26,6 +26,18 @@ import type {
 
 const AUTH_BASE = '/api/v1/auth'
 
+/** Shape of `GET /api/v1/info`: validates the credential and reports what it
+ *  can do. For device tokens, capabilities follow the signed-in user's role. */
+export interface InfoResult {
+    project: { id: string; name: string | null }
+    credential: {
+        type: 'api_key' | 'device'
+        role: string | null
+        user_id: string | null
+    }
+    capabilities: Record<string, boolean>
+}
+
 /**
  * MFA is per-user and opt-in. `enroll`/`enrollConfirm`/`disable` act as the
  * signed-in user, so they need the end-user access token. `challenge` does
@@ -114,6 +126,13 @@ export class AuthApi {
             email: input.email,
             password: input.password,
         })
+    }
+
+    /** Validate the current credential (API key or device token) and report the
+     *  project, the caller's role, and which capabilities that role grants.
+     *  Backs the MCP "is my session still good" check. */
+    info(): Promise<InfoResult> {
+        return this.transport.get<InfoResult>('/api/v1/info')
     }
 
     /** Resolve the signed-in user from their access token, or `{ user: null }`.

@@ -98,6 +98,47 @@ const client = dontcode({ baseUrl: mock.url, apiKey: 'dc_test' })
 await mock.close()
 ```
 
+## MCP server (Claude Code and other AI tools)
+
+This package ships an MCP server so an AI agent can work on a DontCode project
+directly: sign in from the terminal, query and update the database, run
+migrations, and manage files. It runs over stdio, so the tool launches it for
+you.
+
+```jsonc
+// .mcp.json (Claude Code)
+{
+  "mcpServers": {
+    "dontcode": {
+      "command": "npx",
+      "args": ["-y", "-p", "@dontcode2/backend", "dontcode", "mcp"]
+    }
+  }
+}
+```
+
+On first use the agent calls the `auth_login` tool, which opens your browser.
+You confirm a short code, pick a project, and approve; the browser hands a
+short-lived, project-scoped token back to the terminal (cached under
+`~/.dontcode`). The token is bound to your user, and the gateway enforces your
+project role on every request, so the agent can never do more than you can.
+
+CLI equivalents:
+
+```bash
+npx -p @dontcode2/backend dontcode login    # browser sign-in
+npx -p @dontcode2/backend dontcode status   # project + role + capabilities
+npx -p @dontcode2/backend dontcode logout   # forget the cached token
+```
+
+For non-interactive use (CI), set `DONTCODE_API_KEY` to a `dc_` project key and
+skip `login`. Set `DONTCODE_API_URL` to target a non-default gateway.
+
+Tools: `auth_login`, `auth_wait`, `auth_status`, `auth_logout`, `db_query`,
+`db_insert`, `db_update`, `db_delete`, `db_migrate`, `storage_list`,
+`storage_get_url`, `storage_temporary_url`, `storage_upload`, `storage_remove`,
+`storage_move`. Writes and deletes are annotated so the agent confirms first.
+
 ## Auth
 
 The API key (`Authorization: Bearer dc_…`) identifies your **project** and is sent on

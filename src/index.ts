@@ -5,6 +5,7 @@ export { DontCodeError, isDontCodeError } from './errors'
 export type { DontCodeErrorBody } from './errors'
 
 export { AuthApi, MfaApi } from './auth'
+export type { InfoResult } from './auth'
 export { TableQuery, type DbClient } from './db'
 export { BucketClient, PublicBucketClient, createStorage, type StorageClient } from './storage'
 

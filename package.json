@@ -1,6 +1,6 @@
 {
     "name": "@dontcode2/backend",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "description": "Public SDK for DontCode Backend. A thin, typed proxy over the v1 HTTP gateway.",
     "keywords": [
         "dontcode",
@@ -37,9 +37,22 @@
             "import": "./dist/mock/index.js",
             "require": "./dist/mock/index.cjs",
             "default": "./dist/mock/index.js"
+        },
+        "./mcp": {
+            "types": "./dist/mcp/index.d.ts",
+            "import": "./dist/mcp/index.js",
+            "require": "./dist/mcp/index.cjs",
+            "default": "./dist/mcp/index.js"
+        },
+        "./node": {
+            "types": "./dist/node.d.ts",
+            "import": "./dist/node.js",
+            "require": "./dist/node.cjs",
+            "default": "./dist/node.js"
         }
     },
     "bin": {
+        "dontcode": "dist/cli.js",
         "dontcode-mock": "dist/mock/cli.js"
     },
     "sideEffects": false,
@@ -54,6 +67,10 @@
     "files": [
         "dist"
     ],
+    "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.12.0",
+        "zod": "^3.23.0"
+    },
     "devDependencies": {
         "@electric-sql/pglite": "0.5.3",
         "@trivago/prettier-plugin-sort-imports": "6.0.0",

@@ -77,6 +77,12 @@ export class Transport {
         }
     }
 
+    /** GET and parse the JSON response. */
+    async get<T>(path: string, opts?: RequestOptions): Promise<T> {
+        const res = await this.send(path, { method: 'GET', headers: this.headers(opts) }, opts)
+        return this.parse<T>(res)
+    }
+
     /** POST a JSON body and parse the JSON response. */
     async json<T>(path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
         const res = await this.send(
