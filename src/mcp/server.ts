@@ -88,9 +88,25 @@ async function run(fn: () => Promise<unknown>) {
 export function createMcpServer(): McpServer {
     const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION })
 
+    // The MCP SDK infers each tool's argument type from its `inputSchema`
+    // through deep conditional types. Across this many tools that inference
+    // exhausts tsc's heap during declaration emit (TS2589). The gateway
+    // re-validates every call, so these handlers never rely on the inferred
+    // types — register through a thin wrapper that keeps inference shallow.
+    const tool = (
+        name: string,
+        config: {
+            title: string
+            description: string
+            inputSchema?: z.ZodRawShape
+            annotations?: Record<string, boolean>
+        },
+        handler: (args: Record<string, any>) => Promise<unknown>
+    ) => server.registerTool(name, config as never, handler as never)
+
     // --- Authentication ----------------------------------------------------
 
-    server.registerTool(
+    tool(
         'auth_login',
         {
             title: 'Sign in to DontCode',
@@ -119,7 +135,7 @@ export function createMcpServer(): McpServer {
             })
     )
 
-    server.registerTool(
+    tool(
         'auth_wait',
         {
             title: 'Wait for sign-in approval',
@@ -158,7 +174,7 @@ export function createMcpServer(): McpServer {
             })
     )
 
-    server.registerTool(
+    tool(
         'auth_status',
         {
             title: 'Check the current session',
@@ -180,7 +196,7 @@ export function createMcpServer(): McpServer {
             })
     )
 
-    server.registerTool(
+    tool(
         'auth_logout',
         {
             title: 'Forget the cached session',
@@ -198,7 +214,7 @@ export function createMcpServer(): McpServer {
 
     // --- Database ----------------------------------------------------------
 
-    server.registerTool(
+    tool(
         'db_query',
         {
             title: 'Query the database',
@@ -229,7 +245,7 @@ export function createMcpServer(): McpServer {
             })
     )
 
-    server.registerTool(
+    tool(
         'db_insert',
         {
             title: 'Insert a row',
@@ -240,7 +256,7 @@ export function createMcpServer(): McpServer {
         async ({ table, data }) => run(async () => requireClient().db(table).insert(data))
     )
 
-    server.registerTool(
+    tool(
         'db_update',
         {
             title: 'Update rows',
@@ -256,7 +272,7 @@ export function createMcpServer(): McpServer {
             run(async () => requireClient().db(table).update({ where, data }))
     )
 
-    server.registerTool(
+    tool(
         'db_delete',
         {
             title: 'Delete rows',
@@ -268,7 +284,7 @@ export function createMcpServer(): McpServer {
         async ({ table, where }) => run(async () => requireClient().db(table).delete({ where }))
     )
 
-    server.registerTool(
+    tool(
         'db_migrate',
         {
             title: 'Run a schema migration',
@@ -286,7 +302,7 @@ export function createMcpServer(): McpServer {
     const bucketOf = (client: DontCodeClient, bucket: 'public' | 'private') =>
         bucket === 'public' ? client.storage.public : client.storage.private
 
-    server.registerTool(
+    tool(
         'storage_list',
         {
             title: 'List files',
@@ -298,7 +314,7 @@ export function createMcpServer(): McpServer {
             run(async () => bucketOf(requireClient(), bucket).list(prefix))
     )
 
-    server.registerTool(
+    tool(
         'storage_get_url',
         {
             title: 'Get a public URL',
@@ -309,7 +325,7 @@ export function createMcpServer(): McpServer {
         async ({ path }) => run(async () => requireClient().storage.public.getUrl(path))
     )
 
-    server.registerTool(
+    tool(
         'storage_temporary_url',
         {
             title: 'Get a temporary URL',
@@ -325,7 +341,7 @@ export function createMcpServer(): McpServer {
             run(async () => bucketOf(requireClient(), bucket).getTemporaryUrl(path, expires_in))
     )
 
-    server.registerTool(
+    tool(
         'storage_upload',
         {
             title: 'Upload a text file',
@@ -349,7 +365,7 @@ export function createMcpServer(): McpServer {
             )
     )
 
-    server.registerTool(
+    tool(
         'storage_remove',
         {
             title: 'Delete files',
@@ -360,7 +376,7 @@ export function createMcpServer(): McpServer {
         async ({ bucket, paths }) => run(async () => bucketOf(requireClient(), bucket).remove(paths))
     )
 
-    server.registerTool(
+    tool(
         'storage_move',
         {
             title: 'Move or rename a file',

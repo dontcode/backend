@@ -10,7 +10,10 @@ export default defineConfig({
         'mock/cli': 'src/mock/cli.ts',
     },
     format: ['esm', 'cjs'],
-    dts: true,
+    // Declarations are emitted by `tsc --emitDeclarationOnly` (see build script).
+    // tsup's rollup-based dts bundler loads the full type graph into a single
+    // worker thread and exhausts its heap on this project's type surface.
+    dts: false,
     outDir: 'dist',
     sourcemap: true,
     clean: true,

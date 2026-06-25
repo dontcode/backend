@@ -60,7 +60,7 @@
         "node": ">=18"
     },
     "scripts": {
-        "build": "tsup",
+        "build": "tsup && tsc --emitDeclarationOnly",
         "test": "npm run build && node --test tests/*.test.mjs",
         "prepublishOnly": "npm run build"
     },
