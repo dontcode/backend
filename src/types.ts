@@ -200,3 +200,39 @@ export interface TemporaryUrlResult {
 
 /** Bytes the SDK can turn into an upload body. */
 export type UploadBody = Blob | ArrayBuffer | ArrayBufferView | string
+
+// ---------------------------------------------------------------------------
+// Cache (key-value)
+// ---------------------------------------------------------------------------
+
+export interface CacheSetOptions {
+    /** Time-to-live in seconds. Omit for no expiry. */
+    ttl?: number
+    /** Only set if the key does not already exist. */
+    nx?: boolean
+}
+
+// ---------------------------------------------------------------------------
+// Realtime
+// ---------------------------------------------------------------------------
+
+export interface MintConnectionTokenInput {
+    /** Channels the connection may subscribe + publish to. */
+    channels: string[]
+    /** Optional end-user identity surfaced in presence. */
+    identity?: string
+    /** Token lifetime in seconds (default 3600). */
+    ttl?: number
+}
+
+export interface ConnectionToken {
+    /** Short-lived, channel-scoped token the browser connects with. */
+    token: string
+    /** WebSocket URL to connect to: `${url}?token=${token}`. */
+    url: string
+}
+
+export interface RealtimePresenceMember {
+    id: string
+    identity?: string
+}

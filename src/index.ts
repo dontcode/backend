@@ -8,6 +8,8 @@ export { AuthApi, MfaApi } from './auth'
 export type { InfoResult } from './auth'
 export { TableQuery, type DbClient } from './db'
 export { BucketClient, PublicBucketClient, createStorage, type StorageClient } from './storage'
+export { CacheClient, createCache } from './cache'
+export { RealtimeApi, createRealtime } from './realtime'
 
 export {
     decodeAccessToken,

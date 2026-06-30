@@ -1,8 +1,9 @@
 # @dontcode2/backend
 
 The public SDK for the [DontCode](https://www.dontcode.co) backend: a thin, typed
-proxy over the v1 HTTP gateway. Auth, database, and file storage for an app you host
-yourself ("bring your own code"), behind a single project API key.
+proxy over the v1 HTTP gateway. Auth, database, file storage, a key-value cache, and
+realtime pub/sub for an app you host yourself ("bring your own code"), behind a single
+project API key.
 
 It speaks the exact wire protocol of the gateway, so you can move between the SDK and
 raw HTTP at any time without platform-side changes.
@@ -227,6 +228,61 @@ await priv.move('a.pdf', 'archive/a.pdf')
 // Large files: presign, then PUT the bytes to the returned URL yourself.
 const { url: putUrl } = await priv.presignUpload('big.zip', 'application/zip')
 ```
+
+## Cache
+
+A key-value cache for ephemeral, high-churn, or session-scoped state, with optional TTL
+expiry. Keys are scoped to your project automatically. This is a cache, not a database:
+values may be evicted and are not durable, so keep your system of record in `db`.
+
+```ts
+const c = client.cache
+
+await c.set('session:42', { step: 2 }, { ttl: 3600 }) // ttl in seconds
+const session = await c.get<{ step: number }>('session:42') // null on miss or expiry
+await c.set('lock:job', '1', { nx: true }) // false if it already existed
+await c.expire('session:42', 600) // or null to clear the TTL
+await c.del('session:42')
+
+// hashes
+await c.hset('profile:9', { name: 'Zed', level: 7 })
+const profile = await c.hgetAll<{ name: string; level: number }>('profile:9') // null on miss
+
+// sets (string members)
+await c.sAdd('online', 'u1', 'u2')
+const online = await c.sMembers('online') // string[] ([] on miss)
+await c.sRem('online', 'u1')
+```
+
+A miss (or expiry) reads back as `null` for `get`/`hgetAll` and `[]` for `sMembers`,
+not an error.
+
+## Realtime
+
+Realtime pub/sub over WebSockets for live features (chat, presence, live updates). The
+SDK is the **server side**: mint a connection token for a browser, publish messages, and
+read presence. The browser opens the socket itself with the scoped token, so it never
+holds your API key. Delivery is fire-and-forget (no history/replay), so persist anything
+that needs durability to `db`.
+
+```ts
+const rt = client.realtime
+
+// In your token endpoint, after you've authenticated the user:
+const conn = await rt.mintToken({ channels: [`room:${id}`], identity: userId })
+// → send `conn` to the browser; it connects to `${conn.url}?token=${conn.token}`
+//   (use @dontcode/realtime's client `connect()` to handle the socket + reconnect)
+
+// From anywhere on your backend:
+const delivered = await rt.publish(`room:${id}`, { text: 'hello' })
+const members = await rt.presence(`room:${id}`) // [{ id, identity? }]
+```
+
+A browser connection may only use the channels named when its token was minted.
+
+> The local mock gateway (`dontcode-mock`) and the MCP server currently cover auth,
+> database, and storage. Cache and realtime are available on the hosted gateway; point
+> `DONTCODE_API_URL` at it to use them.
 
 ## Errors
 

@@ -97,6 +97,26 @@ export class Transport {
         return this.parse<T>(res)
     }
 
+    /** PUT a JSON body and parse the JSON response. */
+    async put<T>(path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+        const res = await this.send(
+            path,
+            {
+                method: 'PUT',
+                headers: { ...this.headers(opts), 'Content-Type': 'application/json' },
+                body: JSON.stringify(body ?? null),
+            },
+            opts
+        )
+        return this.parse<T>(res)
+    }
+
+    /** DELETE and parse the JSON response. */
+    async del<T>(path: string, opts?: RequestOptions): Promise<T> {
+        const res = await this.send(path, { method: 'DELETE', headers: this.headers(opts) }, opts)
+        return this.parse<T>(res)
+    }
+
     /** PUT a multipart form (file uploads). The runtime sets the boundary. */
     async multipart<T>(path: string, form: FormData, opts?: RequestOptions): Promise<T> {
         const res = await this.send(path, { method: 'PUT', headers: this.headers(opts), body: form }, opts)

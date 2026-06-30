@@ -1,6 +1,8 @@
 import { AuthApi } from './auth'
+import { CacheClient, createCache } from './cache'
 import { createDb, type DbClient } from './db'
 import { Transport } from './http'
+import { createRealtime, RealtimeApi } from './realtime'
 import type { SessionOptions } from './session'
 import { createStorage, type StorageClient } from './storage'
 
@@ -26,6 +28,8 @@ export interface DontCodeClient {
     auth: AuthApi
     db: DbClient
     storage: StorageClient
+    cache: CacheClient
+    realtime: RealtimeApi
 }
 
 /** Read an env var without assuming `process` exists (e.g. in the browser). */
@@ -36,8 +40,8 @@ function fromEnv(name: string): string | undefined {
 
 /**
  * Create a DontCode backend client. A thin, typed proxy over the v1 HTTP
- * gateway: auth, database, and storage. The API key scopes every request to
- * a single project; there is nothing else to configure.
+ * gateway: auth, database, storage, cache, and realtime. The API key scopes
+ * every request to a single project; there is nothing else to configure.
  *
  * ```ts
  * import { dontcode } from '@dontcode2/backend'
@@ -58,5 +62,7 @@ export function dontcode(options: DontCodeClientOptions = {}): DontCodeClient {
         auth: new AuthApi(transport, options.session),
         db: createDb(transport),
         storage: createStorage(transport),
+        cache: createCache(transport),
+        realtime: createRealtime(transport),
     }
 }
