@@ -1,4 +1,4 @@
-import { login, pollDeviceToken, startDeviceAuth } from '../dist/node.js'
+import { detectRepoName, login, pollDeviceToken, startDeviceAuth } from '../dist/node.js'
 import { createMcpServer } from '../dist/node.js'
 import { loadCredential } from '../dist/node.js'
 import { isDontCodeError } from '../dist/index.js'
@@ -20,6 +20,9 @@ let server
 let baseUrl
 // Test-controlled: how many pending polls before the token is issued.
 let pendingPolls = 0
+// Captured body of the most recent /start call, so tests can assert on the
+// client_name / repo_name hints the client sends.
+let lastStartBody = null
 
 function readJson(req) {
     return new Promise((resolve) => {
@@ -42,6 +45,7 @@ before(async () => {
             res.end(JSON.stringify(obj))
         }
         if (req.url === '/api/v1/auth/device/start') {
+            lastStartBody = await readJson(req)
             return send(200, {
                 device_code: 'dev-secret',
                 user_code: 'BKLM-7Q2X',
@@ -78,6 +82,18 @@ describe('device flow', () => {
         const start = await startDeviceAuth(baseUrl, 'Test Tool')
         assert.equal(start.user_code, 'BKLM-7Q2X')
         assert.match(start.verification_uri_complete, /code=BKLM-7Q2X/)
+    })
+
+    it('sends the client and repo name hints on start', async () => {
+        await startDeviceAuth(baseUrl, 'Test Tool', 'my-repo')
+        assert.equal(lastStartBody.client_name, 'Test Tool')
+        assert.equal(lastStartBody.repo_name, 'my-repo')
+    })
+
+    it('detects a repo name from the environment', async () => {
+        // In this repo the git toplevel (or cwd) basename is a non-empty name.
+        const name = await detectRepoName()
+        assert.ok(typeof name === 'string' && name.length > 0)
     })
 
     it('polls through pending and resolves a token', async () => {
@@ -117,6 +133,8 @@ describe('login() caches the credential', () => {
         const cred = await login({ baseUrl, open: false })
         assert.equal(cred.access_token, 'dct_issued')
         assert.equal(loadCredential(baseUrl).access_token, 'dct_issued')
+        // login() auto-detects the repo hint when none is given.
+        assert.ok(typeof lastStartBody.repo_name === 'string' && lastStartBody.repo_name.length > 0)
     })
 })
 

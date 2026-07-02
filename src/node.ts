@@ -4,6 +4,7 @@
  * browser bundle never pulls in `node:fs` / `node:child_process`.
  */
 export {
+    detectRepoName,
     login,
     openBrowser,
     pollDeviceToken,

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod'
 import {
+    detectRepoName,
     login as runLogin,
     openBrowser,
     pollDeviceToken,
@@ -122,7 +123,11 @@ export function createMcpServer(): McpServer {
         },
         async ({ client_name }) =>
             run(async () => {
-                const start = await startDeviceAuth(baseUrl(), client_name ?? 'Claude Code (MCP)')
+                const start = await startDeviceAuth(
+                    baseUrl(),
+                    client_name ?? 'Claude Code (MCP)',
+                    await detectRepoName()
+                )
                 pendingFlow = start
                 await openBrowser(start.verification_uri_complete)
                 return {

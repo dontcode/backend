@@ -34,11 +34,42 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 export async function startDeviceAuth(
     baseUrl: string,
-    clientName?: string
+    clientName?: string,
+    repoName?: string
 ): Promise<DeviceStartResponse> {
     // No credential yet — this is the bootstrap step.
     const transport = new Transport({ baseUrl })
-    return transport.json<DeviceStartResponse>(START_PATH, { client_name: clientName })
+    return transport.json<DeviceStartResponse>(START_PATH, {
+        client_name: clientName,
+        repo_name: repoName,
+    })
+}
+
+/**
+ * Best-effort name of the repository the tool is running in: the git toplevel
+ * directory name, falling back to the current directory name. The approval
+ * page uses it to recommend the project whose name matches. Never required.
+ */
+export async function detectRepoName(): Promise<string | undefined> {
+    try {
+        const [{ execSync }, { basename }] = await Promise.all([
+            import('node:child_process'),
+            import('node:path'),
+        ])
+        try {
+            const top = execSync('git rev-parse --show-toplevel', {
+                stdio: ['ignore', 'pipe', 'ignore'],
+            })
+                .toString()
+                .trim()
+            if (top) return basename(top)
+        } catch {
+            // Not a git repo (or no git); fall through to the directory name.
+        }
+        return basename(process.cwd()) || undefined
+    } catch {
+        return undefined
+    }
 }
 
 export interface PollOptions {
@@ -113,6 +144,9 @@ export async function openBrowser(url: string): Promise<void> {
 export interface LoginOptions {
     baseUrl: string
     clientName?: string
+    /** Repo the tool is connecting from; shown on the approval page so the
+     *  user can one-click the matching project. Auto-detected when omitted. */
+    repoName?: string
     /** Open the browser automatically. Default true. */
     open?: boolean
     /** Where human-facing prompts go. Default: no-op. */
@@ -126,7 +160,8 @@ export interface LoginOptions {
 export async function login(options: LoginOptions): Promise<StoredCredential> {
     const log = options.log ?? (() => {})
 
-    const start = await startDeviceAuth(options.baseUrl, options.clientName)
+    const repoName = options.repoName ?? (await detectRepoName())
+    const start = await startDeviceAuth(options.baseUrl, options.clientName, repoName)
     log(
         `\nOpen this URL to connect:\n  ${start.verification_uri_complete}\n\n` +
             `Confirm this code matches:\n  ${start.user_code}\n\nWaiting for approval...\n`
