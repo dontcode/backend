@@ -106,3 +106,110 @@ describe('mock gateway — auth guard', () => {
         )
     })
 })
+
+describe('mock gateway — cache (kv)', () => {
+    it('round-trips a value and misses on an unknown key', async () => {
+        assert.equal(await client.cache.get('missing'), null)
+        assert.equal(await client.cache.set('k1', { step: 2 }), true)
+        assert.deepEqual(await client.cache.get('k1'), { step: 2 })
+    })
+
+    it('honors nx (set-if-absent) and del', async () => {
+        assert.equal(await client.cache.set('nxkey', 'first', { nx: true }), true)
+        assert.equal(await client.cache.set('nxkey', 'second', { nx: true }), false)
+        assert.equal(await client.cache.get('nxkey'), 'first')
+        assert.equal(await client.cache.del('nxkey'), true)
+        assert.equal(await client.cache.del('nxkey'), false)
+        assert.equal(await client.cache.get('nxkey'), null)
+    })
+
+    it('expires a key after its ttl', async () => {
+        await client.cache.set('ttlkey', 'v', { ttl: 1 })
+        assert.equal(await client.cache.get('ttlkey'), 'v')
+        // ttl is whole seconds; nudge just past it.
+        await new Promise((r) => setTimeout(r, 1100))
+        assert.equal(await client.cache.get('ttlkey'), null)
+    })
+
+    it('supports hashes and sets', async () => {
+        assert.equal(await client.cache.hset('h1', { a: 1, b: 'two' }), 2)
+        assert.deepEqual(await client.cache.hgetAll('h1'), { a: 1, b: 'two' })
+        assert.equal(await client.cache.hgetAll('nope'), null)
+
+        assert.equal(await client.cache.sAdd('s1', 'x', 'y', 'x'), 2)
+        assert.deepEqual((await client.cache.sMembers('s1')).sort(), ['x', 'y'])
+        assert.deepEqual(await client.cache.sMembers('nope'), [])
+        assert.equal(await client.cache.sRem('s1', 'x', 'z'), 1)
+        assert.deepEqual(await client.cache.sMembers('s1'), ['y'])
+    })
+})
+
+describe('mock gateway — realtime', () => {
+    // Open a WebSocket with a minted token and collect parsed `message` frames.
+    const connect = async (token, url) => {
+        const ws = new WebSocket(`${url}?token=${encodeURIComponent(token)}`)
+        const messages = []
+        ws.addEventListener('message', (ev) => messages.push(JSON.parse(ev.data)))
+        await new Promise((resolve, reject) => {
+            ws.addEventListener('open', resolve, { once: true })
+            ws.addEventListener('error', () => reject(new Error('ws open failed')), { once: true })
+        })
+        return { ws, messages }
+    }
+    const settle = () => new Promise((r) => setTimeout(r, 100))
+
+    it('mints a channel-scoped token pointing at a ws:// url', async () => {
+        const conn = await client.realtime.mintToken({ channels: ['game:x'], identity: 'u1' })
+        assert.ok(conn.token)
+        assert.match(conn.url, /^ws:\/\//)
+    })
+
+    it('delivers a server-side publish to a subscribed socket only', async () => {
+        const { token, url } = await client.realtime.mintToken({ channels: ['game:a'] })
+        const { ws, messages } = await connect(token, url)
+
+        const delivered = await client.realtime.publish('game:a', { event: { id: 7 } })
+        const missed = await client.realtime.publish('game:b', { event: { id: 8 } })
+        await settle()
+
+        assert.equal(delivered, 1)
+        assert.equal(missed, 0)
+        assert.equal(messages.length, 1)
+        assert.deepEqual(messages[0], {
+            type: 'message',
+            channel: 'game:a',
+            payload: { event: { id: 7 } },
+        })
+        ws.close()
+    })
+
+    it('reports presence and fans a client publish out to peers, not the sender', async () => {
+        const { token, url } = await client.realtime.mintToken({ channels: ['game:c'], identity: 'p1' })
+        const a = await connect(token, url)
+        const b = await connect(token, url)
+
+        const presence = await client.realtime.presence('game:c')
+        assert.equal(presence.length, 2)
+        assert.ok(presence.every((m) => m.identity === 'p1'))
+
+        a.ws.send(JSON.stringify({ type: 'publish', channel: 'game:c', payload: { hi: true } }))
+        await settle()
+
+        assert.equal(a.messages.length, 0, 'publisher should not receive its own message')
+        assert.equal(b.messages.length, 1)
+        assert.deepEqual(b.messages[0].payload, { hi: true })
+        a.ws.close()
+        b.ws.close()
+    })
+
+    it('rejects a WebSocket opened with a bad token', async () => {
+        const { url } = await client.realtime.mintToken({ channels: ['game:d'] })
+        const ws = new WebSocket(`${url}?token=not-a-real-token`)
+        const outcome = await new Promise((resolve) => {
+            ws.addEventListener('open', () => resolve('open'), { once: true })
+            ws.addEventListener('error', () => resolve('error'), { once: true })
+            ws.addEventListener('close', () => resolve('close'), { once: true })
+        })
+        assert.notEqual(outcome, 'open', 'a bad token must not establish a connection')
+    })
+})

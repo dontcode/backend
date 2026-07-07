@@ -21,7 +21,9 @@
  * It is a DEV tool: passwords are stored in plaintext, tokens are unsigned,
  * and there is no rate limiting. Never expose it to a network you don't trust.
  */
+import { createMockCache } from './cache'
 import { executeDbOperation, type Queryable } from './db-query'
+import { createMockRealtime } from './realtime'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
@@ -203,6 +205,18 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
     // "pick any free port"). Handlers read it at request time, so it is set by then.
     let baseUrl = `http://localhost:${port}`
 
+    // Realtime pub/sub: the HTTP control plane below plus a WebSocket server that
+    // shares this port (see the `upgrade` handler after `listen`). Tokens embed a
+    // ws:// URL derived from `baseUrl`, read lazily so it reflects the real port.
+    const realtime = createMockRealtime({
+        wsUrl: () => baseUrl.replace(/^http/, 'ws'),
+        quiet,
+    })
+
+    // Ephemeral key-value cache (`client.cache`). In-memory only — a restart
+    // starts empty, matching the cache's expiring semantics.
+    const cache = createMockCache()
+
     function objectShape(bucket: string, path: string) {
         const meta = manifest.get(objKey(bucket, path))
         return {
@@ -236,6 +250,10 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
         })
     })
 
+    // Browsers connect the realtime WebSocket to this same port; the token in the
+    // query string carries its granted channels (see ./realtime).
+    server.on('upgrade', (req, socket, head) => realtime.handleUpgrade(req, socket, head))
+
     function sendJson(res: ServerResponse, status: number, body: unknown) {
         const json = JSON.stringify(body)
         res.writeHead(status, {
@@ -261,7 +279,7 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
         if (method === 'OPTIONS') {
             res.writeHead(204, {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET,POST,PUT,OPTIONS',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
                 'Access-Control-Allow-Headers': 'Authorization,Content-Type,X-Access-Token',
             })
             res.end()
@@ -341,6 +359,17 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
 
         if (path.startsWith('/api/v1/auth/') && method === 'POST') {
             await handleAuth(req, res, path.slice('/api/v1/auth/'.length), raw)
+            return
+        }
+
+        if (path.startsWith('/api/v1/realtime')) {
+            handleRealtime(res, path.slice('/api/v1/realtime'.length), method, raw)
+            return
+        }
+
+        if (path.startsWith('/api/v1/cache/')) {
+            const result = cache.handle(method, url, raw)
+            sendJson(res, result.status, result.body)
             return
         }
 
@@ -461,6 +490,31 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
             default:
                 sendJson(res, 404, { error: 'Unknown auth endpoint' })
         }
+    }
+
+    // ── Realtime (HTTP control plane; the socket half is the `upgrade` handler) ─
+
+    function handleRealtime(res: ServerResponse, endpoint: string, method: string, raw: Buffer) {
+        if (endpoint === '/token' && method === 'POST') {
+            const body = parseJson(raw)
+            sendJson(res, 200, realtime.mintToken(body))
+            return
+        }
+        if (endpoint === '/publish' && method === 'POST') {
+            const { channel, payload } = parseJson(raw) as { channel?: unknown; payload?: unknown }
+            if (typeof channel !== 'string') {
+                sendJson(res, 400, { error: 'channel is required' })
+                return
+            }
+            sendJson(res, 200, { delivered: realtime.publish(channel, payload) })
+            return
+        }
+        const presence = endpoint.match(/^\/channels\/([^/]+)\/presence$/)
+        if (presence && method === 'GET') {
+            sendJson(res, 200, { presence: realtime.presence(decodeURIComponent(presence[1])) })
+            return
+        }
+        sendJson(res, 404, { error: 'Unknown realtime endpoint' })
     }
 
     // ── Storage (JSON operations) ─────────────────────────────────────────────
@@ -712,6 +766,7 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
         url: baseUrl,
         port: actualPort,
         close: async () => {
+            realtime.close()
             await new Promise<void>((resolve) => server.close(() => resolve()))
             await pg.close?.()
             if (ephemeral) rmSync(dataDir, { recursive: true, force: true })
