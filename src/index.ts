@@ -10,6 +10,8 @@ export { TableQuery, type DbClient } from './db'
 export { BucketClient, PublicBucketClient, createStorage, type StorageClient } from './storage'
 export { CacheClient, createCache } from './cache'
 export { RealtimeApi, createRealtime } from './realtime'
+export { NotificationsApi, NotificationEmailApi, createNotifications } from './notifications'
+export { PaymentsApi, createPayments } from './payments'
 
 export {
     decodeAccessToken,

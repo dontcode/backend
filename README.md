@@ -1,9 +1,9 @@
 # @dontcode2/backend
 
 The public SDK for the [DontCode](https://www.dontcode.co) backend: a thin, typed
-proxy over the v1 HTTP gateway. Auth, database, file storage, a key-value cache, and
-realtime pub/sub for an app you host yourself ("bring your own code"), behind a single
-project API key.
+proxy over the v1 HTTP gateway. Auth, database, file storage, a key-value cache,
+realtime pub/sub, and transactional notifications for an app you host yourself ("bring
+your own code"), behind a single project API key.
 
 It speaks the exact wire protocol of the gateway, so you can move between the SDK and
 raw HTTP at any time without platform-side changes.
@@ -280,9 +280,27 @@ const members = await rt.presence(`room:${id}`) // [{ id, identity? }]
 
 A browser connection may only use the channels named when its token was minted.
 
-> The local mock gateway (`dontcode-mock`) and the MCP server currently cover auth,
-> database, and storage. Cache and realtime are available on the hosted gateway; point
-> `DONTCODE_API_URL` at it to use them.
+## Notifications
+
+Send transactional messages to your users. One namespace per channel — today `email`.
+Recipients and sender identity are scoped to your project by the gateway.
+
+```ts
+const res = await client.notifications.email.send({
+    to: 'user@example.com', // one address, or an array of them
+    subject: 'Welcome to the app',
+    markdownText: '# Hi\n\nThanks for signing up.', // GitHub-flavored Markdown IS the body
+})
+if (!res.success) console.error(res.error) // { success, messageId?, error? }
+```
+
+`markdownText` is the only content field — there is no `html`/`text` field and no separate
+templates. Content is sanitized server-side. Only `email` exists today; future channels
+(push, sms) attach as `client.notifications.<channel>.send(...)` without changing callers.
+
+> The local mock gateway (`dontcode-mock`) covers auth, database, storage, cache,
+> realtime, and notifications (sends are accepted and logged, never actually delivered).
+> The MCP server currently covers auth, database, and storage.
 
 ## Errors
 

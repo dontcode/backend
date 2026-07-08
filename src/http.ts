@@ -111,6 +111,20 @@ export class Transport {
         return this.parse<T>(res)
     }
 
+    /** PATCH a JSON body and parse the JSON response. */
+    async patch<T>(path: string, body?: unknown, opts?: RequestOptions): Promise<T> {
+        const res = await this.send(
+            path,
+            {
+                method: 'PATCH',
+                headers: { ...this.headers(opts), 'Content-Type': 'application/json' },
+                body: JSON.stringify(body ?? {}),
+            },
+            opts
+        )
+        return this.parse<T>(res)
+    }
+
     /** DELETE and parse the JSON response. */
     async del<T>(path: string, opts?: RequestOptions): Promise<T> {
         const res = await this.send(path, { method: 'DELETE', headers: this.headers(opts) }, opts)

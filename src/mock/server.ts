@@ -22,6 +22,8 @@
  * and there is no rate limiting. Never expose it to a network you don't trust.
  */
 import { createMockCache } from './cache'
+import { createMockNotifications } from './notifications'
+import { createMockPayments, type PaymentsSnapshot } from './payments'
 import { executeDbOperation, type Queryable } from './db-query'
 import { createMockRealtime } from './realtime'
 import { randomUUID } from 'node:crypto'
@@ -217,6 +219,31 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
     // starts empty, matching the cache's expiring semantics.
     const cache = createMockCache()
 
+    // Notifications (`client.notifications`). Accepts sends and logs them; no
+    // mail actually leaves the process in local dev.
+    const notifications = createMockNotifications({ quiet })
+
+    // Payments (`client.payments`). The plan/feature catalog and subscriptions
+    // are durable domain state, so they persist to disk like auth/storage
+    // (unless ephemeral). There is no real provider: `verify` trusts the
+    // paymentId and records a paid receipt; entitlement resolves from the
+    // catalog you seed with definePlans/defineFeatures/setPlanFeatures.
+    const paymentsFile = join(dataDir, 'payments.json')
+    const payments = createMockPayments({
+        load: () => {
+            if (ephemeral || !existsSync(paymentsFile)) return null
+            try {
+                return JSON.parse(readFileSync(paymentsFile, 'utf8')) as PaymentsSnapshot
+            } catch {
+                return null
+            }
+        },
+        save: (snapshot) => {
+            if (ephemeral) return
+            writeFileSync(paymentsFile, JSON.stringify(snapshot, null, 2))
+        },
+    })
+
     function objectShape(bucket: string, path: string) {
         const meta = manifest.get(objKey(bucket, path))
         return {
@@ -279,7 +306,7 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
         if (method === 'OPTIONS') {
             res.writeHead(204, {
                 'Access-Control-Allow-Origin': '*',
-                'Access-Control-Allow-Methods': 'GET,POST,PUT,DELETE,OPTIONS',
+                'Access-Control-Allow-Methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS',
                 'Access-Control-Allow-Headers': 'Authorization,Content-Type,X-Access-Token',
             })
             res.end()
@@ -369,6 +396,18 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
 
         if (path.startsWith('/api/v1/cache/')) {
             const result = cache.handle(method, url, raw)
+            sendJson(res, result.status, result.body)
+            return
+        }
+
+        if (path.startsWith('/api/v1/notifications')) {
+            const result = notifications.handle(method, url, raw)
+            sendJson(res, result.status, result.body)
+            return
+        }
+
+        if (path.startsWith('/api/v1/payments')) {
+            const result = payments.handle(method, url, raw)
             sendJson(res, result.status, result.body)
             return
         }

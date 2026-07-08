@@ -191,6 +191,164 @@ describe('storage', () => {
     })
 })
 
+describe('notifications', () => {
+    it('email.send posts to the email channel and passes the response through', async () => {
+        mockResponse({ body: { success: true, messageId: 'msg_1' } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        const res = await client.notifications.email.send({
+            to: 'user@example.com',
+            subject: 'Welcome',
+            markdownText: '# Hi',
+        })
+        assert.equal(last().url, 'https://backend.dontcode.co/api/v1/notifications/email')
+        assert.equal(headerOf(last(), 'Authorization'), 'Bearer dc_test')
+        assert.deepEqual(bodyOf(last()), {
+            to: ['user@example.com'],
+            subject: 'Welcome',
+            markdownText: '# Hi',
+        })
+        assert.equal(res.success, true)
+        assert.equal(res.messageId, 'msg_1')
+    })
+
+    it('email.send normalizes a single recipient to an array and keeps arrays as-is', async () => {
+        const client = dontcode({ apiKey: 'dc_test' })
+        await client.notifications.email.send({ to: 'solo@x.co', subject: 's', markdownText: 'b' })
+        assert.deepEqual(bodyOf(last()).to, ['solo@x.co'])
+        await client.notifications.email.send({
+            to: ['a@x.co', 'b@x.co'],
+            subject: 's',
+            markdownText: 'b',
+        })
+        assert.deepEqual(bodyOf(last()).to, ['a@x.co', 'b@x.co'])
+    })
+
+    it('surfaces a service-reported failure without throwing', async () => {
+        mockResponse({ body: { success: false, error: 'invalid recipient' } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        const res = await client.notifications.email.send({
+            to: 'bad',
+            subject: 's',
+            markdownText: 'b',
+        })
+        assert.equal(res.success, false)
+        assert.equal(res.error, 'invalid recipient')
+    })
+})
+
+describe('payments', () => {
+    it('verify posts to /verify and unwraps the receipt', async () => {
+        mockResponse({ body: { receipt: { id: 'pay_1', status: 'paid', amount: 9900 } } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        const receipt = await client.payments.verify({
+            paymentId: 'pay_1',
+            expectedAmount: 9900,
+            currency: 'KRW',
+        })
+        assert.equal(last().url, 'https://backend.dontcode.co/api/v1/payments/verify')
+        assert.equal(last().init.method, 'POST')
+        assert.deepEqual(bodyOf(last()), {
+            paymentId: 'pay_1',
+            expectedAmount: 9900,
+            currency: 'KRW',
+        })
+        assert.equal(receipt.id, 'pay_1')
+    })
+
+    it('confirmSubscription maps camelCase args to the wire snake_case', async () => {
+        mockResponse({ body: { subscription: { id: 'sub_1', status: 'active' } } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        const sub = await client.payments.confirmSubscription({
+            subscriptionId: 'sub_1',
+            billingKey: 'bk_1',
+        })
+        assert.equal(last().url, 'https://backend.dontcode.co/api/v1/payments/subscribe-confirm')
+        assert.deepEqual(bodyOf(last()), { subscription_id: 'sub_1', billing_key: 'bk_1' })
+        assert.equal(sub.status, 'active')
+    })
+
+    it('cancelSubscription defaults to a soft cancel', async () => {
+        mockResponse({ body: { subscription: { id: 'sub_1', status: 'active' } } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        await client.payments.cancelSubscription({ id: 'sub_1', status: 'active' })
+        assert.equal(bodyOf(last()).atPeriodEnd, true)
+    })
+
+    it('getSubscription returns null when the user has none', async () => {
+        mockResponse({ body: { subscription: null } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        assert.equal(await client.payments.getSubscription('u1'), null)
+    })
+
+    it('hasActiveSubscription resolves entitlement from the active list', async () => {
+        mockResponse({
+            body: {
+                subscriptions: [
+                    { id: 's1', planId: 'pro', status: 'active' },
+                    { id: 's2', planId: 'basic', status: 'past_due' },
+                ],
+            },
+        })
+        const client = dontcode({ apiKey: 'dc_test' })
+        assert.equal(await client.payments.hasActiveSubscription('u1', 'pro'), true)
+        assert.equal(last().url, 'https://backend.dontcode.co/api/v1/payments/list-active-subscriptions')
+    })
+
+    it('hasActiveSubscription is false for a plan with no active sub', async () => {
+        mockResponse({ body: { subscriptions: [{ id: 's2', planId: 'basic', status: 'past_due' }] } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        assert.equal(await client.payments.hasActiveSubscription('u1', 'pro'), false)
+    })
+
+    it('hasFeature unwraps { ok }', async () => {
+        mockResponse({ body: { ok: true } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        assert.equal(await client.payments.hasFeature('u1', 'export_pdf'), true)
+        assert.deepEqual(bodyOf(last()), { userId: 'u1', featureKey: 'export_pdf' })
+    })
+
+    it('listPlans GETs with the includeInactive query and unwraps plans', async () => {
+        mockResponse({ body: { plans: [{ planId: 'pro' }] } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        const plans = await client.payments.listPlans({ includeInactive: true })
+        assert.equal(last().init.method, 'GET')
+        assert.equal(
+            last().url,
+            'https://backend.dontcode.co/api/v1/payments/plans?includeInactive=true'
+        )
+        assert.equal(plans[0].planId, 'pro')
+    })
+
+    it('setPlanActive PATCHes /plans', async () => {
+        mockResponse({ body: {} })
+        const client = dontcode({ apiKey: 'dc_test' })
+        await client.payments.setPlanActive('pro', false)
+        assert.equal(last().init.method, 'PATCH')
+        assert.equal(last().url, 'https://backend.dontcode.co/api/v1/payments/plans')
+        assert.deepEqual(bodyOf(last()), { planId: 'pro', active: false })
+    })
+
+    it('deletePlan DELETEs with the planId query', async () => {
+        mockResponse({ body: {} })
+        const client = dontcode({ apiKey: 'dc_test' })
+        await client.payments.deletePlan('pro')
+        assert.equal(last().init.method, 'DELETE')
+        assert.equal(last().url, 'https://backend.dontcode.co/api/v1/payments/plans?planId=pro')
+    })
+
+    it('listSubscriptions posts filters to the admin endpoint', async () => {
+        mockResponse({ body: { subscriptions: [{ id: 's1' }], total: 1 } })
+        const client = dontcode({ apiKey: 'dc_test' })
+        const res = await client.payments.listSubscriptions({ status: 'active', limit: 10 })
+        assert.equal(
+            last().url,
+            'https://backend.dontcode.co/api/v1/payments/admin/list-subscriptions'
+        )
+        assert.deepEqual(bodyOf(last()), { status: 'active', limit: 10 })
+        assert.equal(res.total, 1)
+    })
+})
+
 describe('errors', () => {
     it('throws DontCodeError carrying status, code, and body on failure', async () => {
         mockResponse({ status: 403, body: { error: 'Email not verified', code: 'EmailNotVerified' } })

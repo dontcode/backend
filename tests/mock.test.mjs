@@ -213,3 +213,133 @@ describe('mock gateway — realtime', () => {
         assert.notEqual(outcome, 'open', 'a bad token must not establish a connection')
     })
 })
+
+describe('mock gateway — notifications', () => {
+    it('accepts an email send and returns a message id', async () => {
+        const res = await client.notifications.email.send({
+            to: 'user@example.com',
+            subject: 'Welcome',
+            markdownText: '# Hi',
+        })
+        assert.equal(res.success, true)
+        assert.ok(res.messageId)
+    })
+
+    it('accepts an array of recipients', async () => {
+        const res = await client.notifications.email.send({
+            to: ['a@x.co', 'b@x.co'],
+            subject: 'Hello',
+            markdownText: 'body',
+        })
+        assert.equal(res.success, true)
+    })
+
+    it('rejects a send with no recipient as a 400', async () => {
+        await assert.rejects(
+            () => client.notifications.email.send({ to: '', subject: 's', markdownText: 'b' }),
+            (err) => isDontCodeError(err) && err.status === 400
+        )
+    })
+
+    it('404s an unknown channel', async () => {
+        const res = await fetch(`${mock.url}/api/v1/notifications/sms`, {
+            method: 'POST',
+            headers: { Authorization: 'Bearer dc_test', 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to: 'x@y.co' }),
+        })
+        assert.equal(res.status, 404)
+    })
+})
+
+describe('mock gateway — payments', () => {
+    const proPlan = { id: 'pro', name: 'Pro', amount: 9900, interval: 'monthly' }
+
+    it('seeds a catalog and lists plans + plan features', async () => {
+        await client.payments.definePlans([
+            { plan_id: 'pro', name: 'Pro', amount: 9900, interval: 'monthly' },
+            { plan_id: 'legacy', name: 'Legacy', amount: 0, interval: 'monthly', active: false },
+        ])
+        await client.payments.defineFeatures([{ feature_key: 'export_pdf', name: 'Export PDF' }])
+        await client.payments.setPlanFeatures('pro', [{ feature_key: 'export_pdf' }])
+
+        const active = await client.payments.listPlans()
+        assert.deepEqual(
+            active.map((p) => p.planId),
+            ['pro'],
+            'inactive plans are hidden by default'
+        )
+        assert.equal((await client.payments.listPlans({ includeInactive: true })).length, 2)
+        assert.equal((await client.payments.listPlanFeatures('pro'))[0].featureKey, 'export_pdf')
+    })
+
+    it('verifies a charge, then refunds it idempotently', async () => {
+        const receipt = await client.payments.verify({
+            paymentId: 'pay_mock_1',
+            expectedAmount: 9900,
+            currency: 'KRW',
+            userId: 'u1',
+        })
+        assert.equal(receipt.status, 'paid')
+        assert.equal(receipt.amount, 9900)
+
+        const first = await client.payments.refund({ paymentId: 'pay_mock_1', reason: 'test' })
+        assert.equal(first.status, 'refunded')
+        assert.equal(first.refundedAmount, 9900)
+        assert.equal(first.alreadyRefunded, false)
+
+        const again = await client.payments.refund({ paymentId: 'pay_mock_1', reason: 'test' })
+        assert.equal(again.alreadyRefunded, true)
+    })
+
+    it('subscribes a user and resolves entitlement from the catalog', async () => {
+        const sub = await client.payments.createSubscription({
+            plan: proPlan,
+            userId: 'u2',
+            method: 'card',
+            billingKey: 'bk_test',
+        })
+        assert.equal(sub.status, 'active')
+        assert.equal(sub.billingKey, '', 'the billing key is never read back')
+
+        assert.equal(await client.payments.hasActiveSubscription('u2', 'pro'), true)
+        assert.equal(await client.payments.hasFeature('u2', 'export_pdf'), true)
+        assert.equal(await client.payments.hasFeature('u2', 'nope'), false)
+        assert.deepEqual(
+            (await client.payments.listUserFeatures('u2')).map((f) => f.featureKey),
+            ['export_pdf']
+        )
+    })
+
+    it('runs the split reserve → confirm flow', async () => {
+        const reserved = await client.payments.reserveSubscription({
+            plan: proPlan,
+            userId: 'u3',
+            method: 'kakaopay',
+        })
+        assert.ok(reserved.subscriptionId)
+        assert.equal(reserved.billingKeyMethod, 'EASY_PAY')
+        assert.equal(
+            await client.payments.hasActiveSubscription('u3'),
+            false,
+            'trialing is not yet active'
+        )
+
+        const confirmed = await client.payments.confirmSubscription({
+            subscriptionId: reserved.subscriptionId,
+            billingKey: 'bk_u3',
+        })
+        assert.equal(confirmed.status, 'active')
+        assert.equal(await client.payments.hasActiveSubscription('u3'), true)
+    })
+
+    it('grants a comp subscription and soft-cancels it', async () => {
+        const granted = await client.payments.grantSubscription({ userId: 'u4', planId: 'pro' })
+        assert.equal(granted.status, 'active')
+        assert.equal(await client.payments.hasFeature('u4', 'export_pdf'), true)
+        assert.equal((await client.payments.listSubscriptions({ userId: 'u4' })).total, 1)
+
+        const cancelled = await client.payments.cancelSubscription(granted)
+        assert.equal(cancelled.cancelAtPeriodEnd, true)
+        assert.equal(cancelled.status, 'active', 'soft cancel keeps access through the period')
+    })
+})
