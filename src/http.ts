@@ -9,6 +9,10 @@ export interface TransportConfig {
     /** Project API key. When absent, no Authorization header is sent and the
      *  gateway responds with its own "Missing API key" 401. */
     apiKey?: string
+    /** The app's own public URL, already normalized to an origin. Sent as
+     *  `X-App-Url` so the project console can mark the deployment live and
+     *  capture a site thumbnail. */
+    appUrl?: string
     /** Gateway origin, already normalized (no trailing slash). */
     baseUrl: string
     /** Per-request timeout in ms. Defaults to `DEFAULT_TIMEOUT_MS`; `0` (or any
@@ -35,6 +39,7 @@ export class Transport {
     private headers(opts?: RequestOptions): Record<string, string> {
         const headers: Record<string, string> = {}
         if (this.config.apiKey) headers['Authorization'] = `Bearer ${this.config.apiKey}`
+        if (this.config.appUrl) headers['X-App-Url'] = this.config.appUrl
         if (opts?.accessToken) headers['X-Access-Token'] = opts.accessToken
         return headers
     }

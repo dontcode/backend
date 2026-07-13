@@ -18,6 +18,12 @@ export interface DontCodeClientOptions {
     /** Gateway origin. Defaults to `process.env.DONTCODE_API_URL`, then to
      *  `https://backend.dontcode.co`. */
     baseUrl?: string
+    /** The app's own public URL, so the project console can mark the
+     *  deployment live and show a thumbnail of the site. Defaults to
+     *  `process.env.DONTCODE_APP_URL`, then to the URL your host reports
+     *  (Vercel, Netlify, and Cloudflare Pages are detected automatically).
+     *  Pass `''` to opt out. */
+    appUrl?: string
     /** Per-request network timeout in ms. Defaults to 10_000; `0` disables it.
      *  Without one, a slow gateway can hang a request for the full socket
      *  timeout, the worst case for an auth guard. */
@@ -43,6 +49,32 @@ function fromEnv(name: string): string | undefined {
 }
 
 /**
+ * The app's own public URL: an explicit `DONTCODE_APP_URL` wins, then the
+ * env vars the major hosts populate on their own. Anything unparseable is
+ * dropped so a bad value can never break a request.
+ */
+function detectAppUrl(explicit?: string): string | undefined {
+    const candidate =
+        explicit ??
+        fromEnv('DONTCODE_APP_URL') ??
+        // Vercel: the production domain, as a bare hostname.
+        (fromEnv('VERCEL_PROJECT_PRODUCTION_URL') &&
+            `https://${fromEnv('VERCEL_PROJECT_PRODUCTION_URL')}`) ??
+        // Netlify: `URL` is only trustworthy when NETLIFY marks the platform.
+        (fromEnv('NETLIFY') ? fromEnv('URL') : undefined) ??
+        // Cloudflare Pages: full deployment URL.
+        fromEnv('CF_PAGES_URL')
+
+    if (!candidate) return undefined
+    try {
+        const url = new URL(candidate)
+        return url.protocol === 'https:' ? url.origin : undefined
+    } catch {
+        return undefined
+    }
+}
+
+/**
  * Create a DontCode backend client. A thin, typed proxy over the v1 HTTP
  * gateway: auth, database, storage, cache, realtime, notifications, and payments.
  * The API key scopes every request to a single project; there is nothing else to
@@ -61,7 +93,9 @@ export function dontcode(options: DontCodeClientOptions = {}): DontCodeClient {
         ''
     )
 
-    const transport = new Transport({ apiKey, baseUrl, timeoutMs: options.timeoutMs })
+    const appUrl = detectAppUrl(options.appUrl)
+
+    const transport = new Transport({ apiKey, appUrl, baseUrl, timeoutMs: options.timeoutMs })
 
     return {
         auth: new AuthApi(transport, options.session),

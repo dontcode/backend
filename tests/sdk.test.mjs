@@ -35,6 +35,8 @@ afterEach(() => {
     globalThis.fetch = realFetch
     delete process.env.DONTCODE_API_KEY
     delete process.env.DONTCODE_API_URL
+    delete process.env.DONTCODE_APP_URL
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL
 })
 
 const last = () => calls[calls.length - 1]
@@ -68,6 +70,40 @@ describe('client construction', () => {
         const client = dontcode()
         await client.auth.login({ email: 'a@b.co', password: 'x' })
         assert.equal(headerOf(last(), 'Authorization'), undefined)
+    })
+
+    it('sends an explicit appUrl as X-App-Url, normalized to its origin', async () => {
+        const client = dontcode({ apiKey: 'dc_test', appUrl: 'https://myapp.example/deep/page' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), 'https://myapp.example')
+    })
+
+    it('detects the app URL from DONTCODE_APP_URL, then the host env', async () => {
+        process.env.DONTCODE_APP_URL = 'https://configured.example'
+        process.env.VERCEL_PROJECT_PRODUCTION_URL = 'vercel.example'
+        let client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), 'https://configured.example')
+
+        delete process.env.DONTCODE_APP_URL
+        client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), 'https://vercel.example')
+    })
+
+    it('sends no X-App-Url when nothing is configured, opted out, or invalid', async () => {
+        let client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), undefined)
+
+        process.env.VERCEL_PROJECT_PRODUCTION_URL = 'vercel.example'
+        client = dontcode({ apiKey: 'dc_test', appUrl: '' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), undefined)
+
+        client = dontcode({ apiKey: 'dc_test', appUrl: 'http://insecure.example' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), undefined)
     })
 })
 

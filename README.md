@@ -323,3 +323,40 @@ try {
 
 "One more step" auth states (`verification_required`, `mfa_required`) are **successful**
 2xx responses, not errors; branch on the resolved value for those.
+
+### Payment errors
+
+Payment calls (`client.payments.*`) throw the same `DontCodeError`. Forward
+`err.message` to the buyer and branch on `err.code` so they see *why* a charge
+could not start, instead of a generic "something went wrong". Do not collapse a
+`402` into a `500`: the status is meaningful, and the message is safe to show.
+
+```ts
+try {
+    const reservation = await client.payments.reserveSubscription({ plan, userId, method })
+} catch (err) {
+    if (isDontCodeError(err)) {
+        // err.status → 402, err.code → 'BANK_ACCOUNT_REQUIRED', err.message → the reason
+        showToBuyer(err.message)
+    }
+}
+```
+
+The most common codes:
+
+| `code` | Status | What it means | How to resolve |
+| --- | --- | --- | --- |
+| `BANK_ACCOUNT_REQUIRED` | 402 | The app has no payout bank account, so it cannot accept payments yet. | **App owner:** add a payout bank account in the project **Payments** tab, then wait for it to verify. |
+| `BANK_ACCOUNT_PENDING_VERIFICATION` | 402 | The payout account is still being verified. | Wait for verification to finish; payments resume automatically. |
+| `BANK_ACCOUNT_GRACE_EXPIRED` | 402 | The payout account stayed unverified past its grace window. | **App owner:** re-verify the account in the project **Payments** tab. |
+| `BANK_ACCOUNT_SUSPENDED` | 402 | The payout account is suspended. | Contact support. |
+| `CHARGE_FAILED` | 402 | The buyer's payment was declined. | **Buyer:** retry or use a different payment method. |
+| `PAYMENT_VERIFICATION_FAILED` | 402 | The completed payment could not be verified against the recorded amount. | Confirm the amount and currency match the plan, then retry. |
+| `SUBSCRIPTION_NOT_FOUND` | 404 | No subscription for that id/user, or it has no saved billing method. | Re-reserve the subscription before confirming or charging. |
+| `BILLING_KEY_MISSING` | 400 | The operation needs a saved billing method that is not present. | Complete the reserve then confirm flow so a billing method is stored. |
+| `RATE_LIMITED` | 429 | Too many payment requests for this project. | Back off and retry after `err.body.timeleft` seconds (`err.rateLimited` is `true`). |
+
+The `BANK_ACCOUNT_*` codes are setup states, not bugs: a brand-new project
+returns `BANK_ACCOUNT_REQUIRED` on every charge until its owner links and
+verifies a payout account. Surface that message so the owner knows to finish
+setup, rather than logging it and showing the buyer a dead end.
