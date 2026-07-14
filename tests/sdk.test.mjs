@@ -37,6 +37,14 @@ afterEach(() => {
     delete process.env.DONTCODE_API_URL
     delete process.env.DONTCODE_APP_URL
     delete process.env.VERCEL_PROJECT_PRODUCTION_URL
+    delete process.env.NETLIFY
+    delete process.env.URL
+    delete process.env.SITE_NAME
+    delete process.env.SITE_ID
+    delete process.env.RENDER_EXTERNAL_URL
+    delete process.env.RAILWAY_PUBLIC_DOMAIN
+    delete process.env.FLY_APP_NAME
+    delete process.env.KOYEB_PUBLIC_DOMAIN
 })
 
 const last = () => calls[calls.length - 1]
@@ -89,6 +97,48 @@ describe('client construction', () => {
         client = dontcode({ apiKey: 'dc_test' })
         await client.auth.login({ email: 'a@b.co', password: 'x' })
         assert.equal(headerOf(last(), 'X-App-Url'), 'https://vercel.example')
+    })
+
+    it('detects Netlify at runtime, where only URL/SITE_NAME/SITE_ID exist', async () => {
+        // Netlify functions do NOT get the NETLIFY env var at runtime.
+        process.env.URL = 'https://petsof.netlify.app'
+        process.env.SITE_NAME = 'petsof'
+        const client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), 'https://petsof.netlify.app')
+    })
+
+    it('detects Render, Railway, and Fly.io from their runtime env vars', async () => {
+        process.env.RENDER_EXTERNAL_URL = 'https://myapp.onrender.com'
+        let client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), 'https://myapp.onrender.com')
+        delete process.env.RENDER_EXTERNAL_URL
+
+        process.env.RAILWAY_PUBLIC_DOMAIN = 'myapp.up.railway.app'
+        client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), 'https://myapp.up.railway.app')
+        delete process.env.RAILWAY_PUBLIC_DOMAIN
+
+        process.env.FLY_APP_NAME = 'myapp'
+        client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), 'https://myapp.fly.dev')
+        delete process.env.FLY_APP_NAME
+
+        process.env.KOYEB_PUBLIC_DOMAIN = 'myapp-org-1a2b.koyeb.app'
+        client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), 'https://myapp-org-1a2b.koyeb.app')
+    })
+
+    it('ignores a bare URL env var without a Netlify marker', async () => {
+        // `URL` is too generic a name to trust on its own.
+        process.env.URL = 'https://something.example'
+        const client = dontcode({ apiKey: 'dc_test' })
+        await client.auth.login({ email: 'a@b.co', password: 'x' })
+        assert.equal(headerOf(last(), 'X-App-Url'), undefined)
     })
 
     it('sends no X-App-Url when nothing is configured, opted out, or invalid', async () => {

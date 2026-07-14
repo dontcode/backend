@@ -21,8 +21,9 @@ export interface DontCodeClientOptions {
     /** The app's own public URL, so the project console can mark the
      *  deployment live and show a thumbnail of the site. Defaults to
      *  `process.env.DONTCODE_APP_URL`, then to the URL your host reports
-     *  (Vercel, Netlify, and Cloudflare Pages are detected automatically).
-     *  Pass `''` to opt out. */
+     *  (Vercel, Netlify, Render, Railway, Fly.io, and Koyeb are detected
+     *  automatically; on other hosts set `DONTCODE_APP_URL`). Pass `''` to
+     *  opt out. */
     appUrl?: string
     /** Per-request network timeout in ms. Defaults to 10_000; `0` disables it.
      *  Without one, a slow gateway can hang a request for the full socket
@@ -60,9 +61,23 @@ function detectAppUrl(explicit?: string): string | undefined {
         // Vercel: the production domain, as a bare hostname.
         (fromEnv('VERCEL_PROJECT_PRODUCTION_URL') &&
             `https://${fromEnv('VERCEL_PROJECT_PRODUCTION_URL')}`) ??
-        // Netlify: `URL` is only trustworthy when NETLIFY marks the platform.
-        (fromEnv('NETLIFY') ? fromEnv('URL') : undefined) ??
-        // Cloudflare Pages: full deployment URL.
+        // Netlify: `URL` is the site's main address, but it's only trustworthy
+        // when a Netlify marker proves the platform. `NETLIFY` exists at build
+        // time only; functions at runtime get just URL, SITE_NAME, and SITE_ID.
+        (fromEnv('NETLIFY') || fromEnv('SITE_NAME') || fromEnv('SITE_ID')
+            ? fromEnv('URL')
+            : undefined) ??
+        // Render: the service's full public URL.
+        fromEnv('RENDER_EXTERNAL_URL') ??
+        // Railway: the public domain, as a bare hostname.
+        (fromEnv('RAILWAY_PUBLIC_DOMAIN') && `https://${fromEnv('RAILWAY_PUBLIC_DOMAIN')}`) ??
+        // Fly.io: public apps serve at {app}.fly.dev with TLS by default.
+        (fromEnv('FLY_APP_NAME') && `https://${fromEnv('FLY_APP_NAME')}.fly.dev`) ??
+        // Koyeb: the service's default public domain, as a bare hostname.
+        (fromEnv('KOYEB_PUBLIC_DOMAIN') && `https://${fromEnv('KOYEB_PUBLIC_DOMAIN')}`) ??
+        // Cloudflare Pages exposes its URL at build time only; kept for the
+        // setups that inline it. At runtime there is no URL var on Cloudflare,
+        // so those apps set DONTCODE_APP_URL instead.
         fromEnv('CF_PAGES_URL')
 
     if (!candidate) return undefined
