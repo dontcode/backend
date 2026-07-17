@@ -231,16 +231,26 @@ const { url: putUrl } = await priv.presignUpload('big.zip', 'application/zip')
 
 ## Cache
 
-A key-value cache for ephemeral, high-churn, or session-scoped state, with optional TTL
-expiry. Keys are scoped to your project automatically. This is a cache, not a database:
-values may be evicted and are not durable, so keep your system of record in `db`.
+A key-value store for shared, short-lived state: one place every instance of your app
+reads and writes, no matter where it runs. Serverless and multi-instance hosting cannot
+share process memory, so state that must be visible fleet-wide lives here instead:
+rate-limit counters, one-time codes and login nonces, webhook idempotency guards and
+run-once locks (`nx`), anonymous carts and multi-step wizard sessions, and cached results
+of genuinely expensive work (large aggregates, paid third-party APIs, AI calls). Values
+survive your deploys and are shared between your web app and any workers or crons using
+the same key. There is nothing to provision: no store to run, no connection string.
+
+Keys are scoped to your project automatically. This is ephemeral state, not a database:
+values may be evicted and are not durable, so keep your system of record in `db`. Skip it
+for cheap reads, too; a cache round trip costs about as much as a `db` query, so cache
+work that is expensive, not queries that are already fast.
 
 ```ts
 const c = client.cache
 
 await c.set('session:42', { step: 2 }, { ttl: 3600 }) // ttl in seconds
 const session = await c.get<{ step: number }>('session:42') // null on miss or expiry
-await c.set('lock:job', '1', { nx: true }) // false if it already existed
+await c.set('webhook:evt_9f2', 1, { ttl: 86400, nx: true }) // false if already seen: dedupe/locks
 await c.expire('session:42', 600) // or null to clear the TTL
 await c.del('session:42')
 
@@ -248,14 +258,21 @@ await c.del('session:42')
 await c.hset('profile:9', { name: 'Zed', level: 7 })
 const profile = await c.hgetAll<{ name: string; level: number }>('profile:9') // null on miss
 
-// sets (string members)
+// sets (string members): presence lists, vote dedupe, fleet-wide flags
 await c.sAdd('online', 'u1', 'u2')
 const online = await c.sMembers('online') // string[] ([] on miss)
 await c.sRem('online', 'u1')
 ```
 
 A miss (or expiry) reads back as `null` for `get`/`hgetAll` and `[]` for `sMembers`,
-not an error.
+not an error. `nx` plus a TTL is the canonical coordination pattern; whichever instance
+gets there first wins, everywhere else backs off:
+
+```ts
+// run a job at most once per day, across every instance and cron
+const won = await c.set(`job:digest:${today}`, 1, { ttl: 86_400, nx: true })
+if (won) await sendDailyDigest()
+```
 
 ## Realtime
 

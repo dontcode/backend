@@ -13,13 +13,19 @@ function asMiss<T>(err: unknown, fallback: T): T {
 }
 
 /**
- * Key-value cache: a typed proxy over `/api/v1/cache`. Keys are namespaced to
- * your project by the gateway; values are JSON. This is ephemeral storage —
- * use `db` for anything that must be durable.
+ * Key-value store for shared, short-lived state: a typed proxy over
+ * `/api/v1/cache`. Every instance of your app reads and writes the same keys,
+ * which is what serverless and multi-instance hosting cannot do with process
+ * memory. Use it for rate-limit counters, one-time codes, webhook idempotency
+ * guards and run-once locks (`nx`), anonymous sessions, and cached results of
+ * genuinely expensive work. Keys are namespaced to your project by the
+ * gateway; values are JSON. This is ephemeral storage; use `db` for anything
+ * that must be durable.
  *
  * ```ts
  * await client.cache.set('session:42', { step: 2 }, { ttl: 3600 })
  * const s = await client.cache.get<{ step: number }>('session:42') // null if expired
+ * const won = await client.cache.set('job:daily', 1, { ttl: 86_400, nx: true })
  * ```
  */
 export class CacheClient {
@@ -36,7 +42,8 @@ export class CacheClient {
     }
 
     /** Set a value, optionally with a TTL (seconds) or set-if-absent (`nx`).
-     *  Returns `false` when `nx` is set and the key already existed. */
+     *  Returns `false` when `nx` is set and the key already existed; that one
+     *  flag is the building block for locks, once-only jobs, and dedupe. */
     async set(key: string, value: unknown, options: CacheSetOptions = {}): Promise<boolean> {
         const params = new URLSearchParams()
         if (options.ttl != null) params.set('ttl', String(options.ttl))

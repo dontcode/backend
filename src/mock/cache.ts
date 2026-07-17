@@ -1,10 +1,11 @@
 /**
  * Key-value cache for the mock gateway — the server half of `client.cache`.
  *
- * Production backs this with Redis; the mock keeps it in a plain in-process Map
- * because the cache is explicitly EPHEMERAL (the SDK docs say so). Unlike the
- * mock's db/auth/storage, nothing here is persisted to disk — a restart starts
- * empty, which matches how an expiring cache behaves anyway.
+ * The mock keeps it in a plain in-process Map because the cache is explicitly
+ * EPHEMERAL (the SDK docs say so). Unlike the mock's db/auth/storage, nothing
+ * here is persisted to disk — a restart starts empty, which matches how an
+ * expiring cache behaves anyway. What backs the real service is not part of
+ * the contract.
  *
  * The wire protocol is `/api/v1/cache/...` (see src/cache.ts for the client):
  *   GET    /kv/:key                 → { value } | 404 (miss)

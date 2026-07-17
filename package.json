@@ -9,7 +9,10 @@
         "byoc",
         "auth",
         "database",
-        "storage"
+        "storage",
+        "cache",
+        "kv",
+        "realtime"
     ],
     "homepage": "https://github.com/dontcode/backend#readme",
     "bugs": {
