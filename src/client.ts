@@ -96,7 +96,7 @@ function detectAppUrl(explicit?: string): string | undefined {
  * configure.
  *
  * ```ts
- * import { dontcode } from '@dontcode2/backend'
+ * import { dontcode } from 'dontcode'
  * const client = dontcode() // reads DONTCODE_API_KEY
  * await client.auth.signup({ email, password, role: 'editor' })
  * ```

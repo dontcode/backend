@@ -1,4 +1,4 @@
-# @dontcode2/backend
+# dontcode
 
 The public SDK for the [DontCode](https://www.dontcode.co) backend: a thin, typed
 proxy over the v1 HTTP gateway. Auth, database, file storage, a key-value cache,
@@ -11,8 +11,8 @@ raw HTTP at any time without platform-side changes.
 ## Install
 
 ```bash
-pnpm add @dontcode2/backend
-# or: npm i @dontcode2/backend
+pnpm add dontcode
+# or: npm i dontcode
 ```
 
 Works in Node 18+ and the browser; it uses the global `fetch`, with no extra runtime
@@ -21,7 +21,7 @@ dependencies.
 ## Quick start
 
 ```ts
-import { dontcode } from '@dontcode2/backend'
+import { dontcode } from 'dontcode'
 
 // apiKey defaults to process.env.DONTCODE_API_KEY,
 // baseUrl  defaults to process.env.DONTCODE_API_URL (then backend.dontcode.co).
@@ -90,8 +90,8 @@ You can also drive it programmatically — handy for integration tests that need
 clean backend per run:
 
 ```ts
-import { startMockServer } from '@dontcode2/backend/mock'
-import { dontcode } from '@dontcode2/backend'
+import { startMockServer } from 'dontcode/mock'
+import { dontcode } from 'dontcode'
 
 const mock = await startMockServer({ dataDir: null }) // ephemeral
 const client = dontcode({ baseUrl: mock.url, apiKey: 'dc_test' })
@@ -112,7 +112,7 @@ you.
   "mcpServers": {
     "dontcode": {
       "command": "npx",
-      "args": ["-y", "-p", "@dontcode2/backend", "dontcode", "mcp"]
+      "args": ["-y", "dontcode", "mcp"]
     }
   }
 }
@@ -127,9 +127,9 @@ project role on every request, so the agent can never do more than you can.
 CLI equivalents:
 
 ```bash
-npx -p @dontcode2/backend dontcode login    # browser sign-in
-npx -p @dontcode2/backend dontcode status   # project + role + capabilities
-npx -p @dontcode2/backend dontcode logout   # forget the cached token
+npx dontcode login    # browser sign-in
+npx dontcode status   # project + role + capabilities
+npx dontcode logout   # forget the cached token
 ```
 
 For non-interactive use (CI), set `DONTCODE_API_KEY` to a `dc_` project key and
@@ -324,7 +324,7 @@ templates. Content is sanitized server-side. Only `email` exists today; future c
 Every non-2xx response throws a `DontCodeError`:
 
 ```ts
-import { DontCodeError, isDontCodeError } from '@dontcode2/backend'
+import { DontCodeError, isDontCodeError } from 'dontcode'
 
 try {
     await client.auth.login({ email, password })

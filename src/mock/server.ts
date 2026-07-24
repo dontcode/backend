@@ -849,7 +849,7 @@ async function loadPGlite(): Promise<PGliteModule> {
         throw new Error(
             'The DontCode mock needs an in-process Postgres engine that is not installed.\n' +
                 '  Install it with:  pnpm add -D @electric-sql/pglite   (or npm i -D @electric-sql/pglite)\n' +
-                '  It ships as an optional dependency of @dontcode2/backend, so this usually means\n' +
+                '  It ships as an optional dependency of dontcode, so this usually means\n' +
                 '  it was skipped (e.g. an install run with --no-optional).'
         )
     }

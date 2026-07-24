@@ -4,8 +4,8 @@
  * Import it programmatically:
  *
  * ```ts
- * import { startMockServer } from '@dontcode2/backend/mock'
- * import { dontcode } from '@dontcode2/backend'
+ * import { startMockServer } from 'dontcode/mock'
+ * import { dontcode } from 'dontcode'
  *
  * const mock = await startMockServer({ dataDir: null }) // ephemeral
  * const client = dontcode({ baseUrl: mock.url, apiKey: 'dc_test' })
