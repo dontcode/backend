@@ -10,8 +10,9 @@
  *
  * What it does NOT do: talk to a real PG, open a real billing popup, or verify a
  * real charge. `verify` trusts the `paymentId` you hand it and records a paid
- * receipt; `subscribe-reserve` returns placeholder `storeId`/`channelKey`. The
- * split flow still round-trips (reserve → confirm), it just never leaves memory.
+ * receipt; `request-payment` and `subscribe-reserve` return placeholder
+ * `storeId`/`channelKey`. The split flow still round-trips (reserve → confirm),
+ * it just never leaves memory.
  *
  * Entitlement resolves a user's active subscriptions to feature keys via the
  * plan/feature map, matching `subscription.planId` against the catalog `planId`.
@@ -239,6 +240,21 @@ export function createMockPayments(opts?: {
 
         switch (`${method} ${op}`) {
             // ── one-time payments ──────────────────────────────────────────
+            case 'POST request-payment': {
+                const amount = Number(body.amount ?? 0)
+                const itemName = String(body.itemName ?? '')
+                if (!amount || amount <= 0) return bad('amount is required')
+                if (!itemName) return bad('itemName is required')
+                // Placeholder popup config, matching subscribe-reserve: the mock
+                // never opens a real provider popup; `verify` trusts the id.
+                return ok({
+                    paymentId: `payment-${randomUUID()}`,
+                    storeId: 'store-mock',
+                    channelKey: 'channel-mock',
+                    currency: typeof body.currency === 'string' ? body.currency : 'KRW',
+                })
+            }
+
             case 'POST verify': {
                 const paymentId = String(body.paymentId ?? '')
                 if (!paymentId) return bad('paymentId is required')

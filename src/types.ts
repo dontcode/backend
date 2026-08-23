@@ -338,6 +338,17 @@ export interface ReserveSubscriptionResult {
     billingKeyMethod: 'CARD' | 'EASY_PAY'
 }
 
+/**
+ * Popup config returned by the one-time payment intent step. Hand it to the
+ * browser to open the provider popup, then `verify` the completed charge.
+ */
+export interface RequestPaymentResult {
+    paymentId: string
+    storeId: string
+    channelKey: string
+    currency: string
+}
+
 /** A priced tier in the project's plan registry. */
 export interface Plan {
     id: string

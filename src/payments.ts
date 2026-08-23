@@ -10,6 +10,7 @@ import type {
     PlanInput,
     RefundInput,
     RefundResult,
+    RequestPaymentResult,
     ReserveSubscriptionResult,
     Subscription,
     SubscriptionFilters,
@@ -41,6 +42,24 @@ export class PaymentsApi {
     constructor(private readonly transport: Transport) {}
 
     // --- one-time payments --------------------------------------------------
+
+    /**
+     * One-shot charge, step 1: create a payment intent and get the popup
+     * config (paymentId + storeId/channelKey). The customer completes the
+     * charge in the provider popup; `verify` it afterwards. The gateway owns
+     * the provider relationship, so the app never configures PortOne itself.
+     */
+    requestPayment(params: {
+        amount: number
+        itemName: string
+        method: PaymentMethod
+        currency?: string
+    }): Promise<RequestPaymentResult> {
+        return this.transport.json<RequestPaymentResult>(
+            `${PAYMENTS_PATH}/request-payment`,
+            params
+        )
+    }
 
     /** Verify and record a charge the customer just completed. */
     async verify(params: {
