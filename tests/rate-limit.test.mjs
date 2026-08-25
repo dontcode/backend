@@ -1,4 +1,5 @@
 import { dontcode, isDontCodeError } from '../dist/index.js'
+import { startDeviceAuth } from '../dist/node.js'
 import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
@@ -112,6 +113,77 @@ describe('rate-limit headers on successful responses', () => {
         assert.equal(client.rateLimit.status('db'), undefined)
         assert.equal(client.rateLimit.status(), undefined)
         assert.deepEqual(client.rateLimit.all(), [])
+    })
+})
+
+describe('namespaces agree with the names the gateway reports', () => {
+    /**
+     * The gateway only names a budget when it refuses one; the SDK names it on
+     * every call by deriving it from the path. Those two names have to be the
+     * same string, or `err.scope` and `err.rateLimit.namespace` describe one
+     * bucket under two keys and anything counting per namespace double-counts.
+     */
+    it('agrees with the gateway on a nested namespace', async () => {
+        const client = dontcode({ apiKey: 'dc_test' })
+        mockResponse({
+            status: 429,
+            body: {
+                error: 'Rate limit exceeded. Try again in 12s.',
+                rate_limit: true,
+                timeleft: 12,
+                // Exactly what the gateway sends for this budget.
+                scope: 'db/migrate',
+            },
+            headers: { ...budget({ limit: 10, remaining: 0, reset: 12 }), 'Retry-After': 12 },
+        })
+
+        const err = await client.db.migrate({ sql: 'select 1' }).then(
+            () => null,
+            (e) => e
+        )
+
+        assert.ok(isDontCodeError(err))
+        assert.equal(err.scope, 'db/migrate')
+        assert.equal(err.rateLimit.namespace, err.scope)
+    })
+
+    it('keeps a nested namespace out of its parent budget', async () => {
+        const client = dontcode({ apiKey: 'dc_test' })
+
+        mockResponse({ body: { data: [] }, headers: budget({ limit: 600, remaining: 590 }) })
+        await client.db.users.find()
+
+        mockResponse({ body: { success: true }, headers: budget({ limit: 10, remaining: 2 }) })
+        await client.db.migrate({ sql: 'select 1' })
+
+        // The small migrate budget must never overwrite the big db one.
+        assert.equal(client.rateLimit.status('db').remaining, 590)
+        assert.equal(client.rateLimit.status('db/migrate').remaining, 2)
+    })
+
+    it('gives the device-auth bootstrap its own namespace, matching the gateway', async () => {
+        mockResponse({
+            status: 429,
+            body: {
+                error: 'Rate limit exceeded. Try again in 30s.',
+                rate_limit: true,
+                timeleft: 30,
+                scope: 'auth/device/start',
+            },
+            headers: { ...budget({ limit: 20, remaining: 0, reset: 30 }), 'Retry-After': 30 },
+        })
+
+        const err = await startDeviceAuth('https://example.test', 'Test Tool').then(
+            () => null,
+            (e) => e
+        )
+
+        assert.ok(isDontCodeError(err))
+        // Bootstrap has its own IP-keyed budget; filing it under `auth` would
+        // report a budget the caller never spent from.
+        assert.equal(err.rateLimit.namespace, 'auth/device/start')
+        assert.equal(err.scope, err.rateLimit.namespace)
+        assert.equal(err.retryAfter, 30)
     })
 })
 

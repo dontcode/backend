@@ -23,7 +23,8 @@ export interface HeaderReader {
  *  field is optional because a response that wasn't counted reports none of
  *  them, and guessing a number there would be worse than admitting silence. */
 export interface RateLimitStatus {
-    /** Public v1 namespace the budget belongs to: `db`, `db/migrate`, `auth`, … */
+    /** Public v1 namespace the budget belongs to: `db`, `db/migrate`, `auth`, …
+     *  Always the same string the gateway reports as `scope` on a refusal. */
     namespace: string
     /** Requests allowed per window. */
     limit?: number
@@ -57,17 +58,32 @@ export interface RateLimitHints {
 }
 
 /**
+ * Namespaces that live below the first path segment and hold their own budget.
+ * Longest first, so a nested match always wins over its parent — otherwise
+ * `db/migrate` would be filed under `db` and its far smaller budget would
+ * silently overwrite the readings for the big one.
+ *
+ * These strings are exactly what the gateway reports as `scope` when it refuses
+ * a request, so a namespace named here and the one named on the wire are always
+ * the same value.
+ */
+const NESTED_NAMESPACES = ['auth/device/start', 'db/migrate']
+
+/**
  * The namespace a request path spends from. Derived from the path rather than
  * from the response, because the path is known on every call while the
  * server only names the budget when it refuses one.
  */
 export function namespaceFromPath(path: string): string {
     const rest = path.replace(/^\/api\/v1/, '').replace(/^\/+/, '')
-    const [first = '', second = ''] = rest.split(/[/?#]/)
-    if (!first) return 'info'
-    // `db/migrate` is its own budget, and a far smaller one than `db`.
-    if (first === 'db' && second === 'migrate') return 'db/migrate'
-    return first
+    const [head = ''] = rest.split(/[?#]/)
+    const segments = head.split('/').filter(Boolean)
+    if (segments.length === 0) return 'info'
+    for (const nested of NESTED_NAMESPACES) {
+        const depth = nested.split('/').length
+        if (segments.slice(0, depth).join('/') === nested) return nested
+    }
+    return segments[0] ?? 'info'
 }
 
 function num(raw: string | null | undefined): number | undefined {
