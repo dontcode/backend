@@ -4,6 +4,8 @@ export type { DontCodeClient, DontCodeClientOptions } from './client'
 export { DontCodeError, isDontCodeError } from './errors'
 export type { DontCodeErrorBody } from './errors'
 
+export type { RateLimitStatus, RateLimitView } from './rate-limit'
+
 export { AuthApi, MfaApi } from './auth'
 export type { InfoResult } from './auth'
 export { TableQuery, type DbClient } from './db'

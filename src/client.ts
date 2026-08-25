@@ -4,6 +4,7 @@ import { createDb, type DbClient } from './db'
 import { Transport } from './http'
 import { createNotifications, NotificationsApi } from './notifications'
 import { createPayments, PaymentsApi } from './payments'
+import type { RateLimitStatus, RateLimitView } from './rate-limit'
 import { createRealtime, RealtimeApi } from './realtime'
 import type { SessionOptions } from './session'
 import { createStorage, type StorageClient } from './storage'
@@ -31,6 +32,11 @@ export interface DontCodeClientOptions {
     timeoutMs?: number
     /** Caching + timeout policy for `auth.getSession` / `auth.sessionFromCookies`. */
     session?: SessionOptions
+    /** Notified after every counted response with what is left of that
+     *  namespace's budget. Fires on successes too, which is what makes it
+     *  useful: a batch job can ease off at 80% spent instead of learning the
+     *  ceiling by being refused at it. Throwing here cannot fail a request. */
+    onRateLimit?: (status: RateLimitStatus) => void
 }
 
 export interface DontCodeClient {
@@ -41,6 +47,9 @@ export interface DontCodeClient {
     realtime: RealtimeApi
     notifications: NotificationsApi
     payments: PaymentsApi
+    /** What this client last heard about its rate-limit budgets. Read it to
+     *  pace work; `undefined` for a namespace means nothing counted there yet. */
+    rateLimit: RateLimitView
 }
 
 /** Read an env var without assuming `process` exists (e.g. in the browser). */
@@ -110,7 +119,13 @@ export function dontcode(options: DontCodeClientOptions = {}): DontCodeClient {
 
     const appUrl = detectAppUrl(options.appUrl)
 
-    const transport = new Transport({ apiKey, appUrl, baseUrl, timeoutMs: options.timeoutMs })
+    const transport = new Transport({
+        apiKey,
+        appUrl,
+        baseUrl,
+        timeoutMs: options.timeoutMs,
+        onRateLimit: options.onRateLimit,
+    })
 
     return {
         auth: new AuthApi(transport, options.session),
@@ -120,5 +135,9 @@ export function dontcode(options: DontCodeClientOptions = {}): DontCodeClient {
         realtime: createRealtime(transport),
         notifications: createNotifications(transport),
         payments: createPayments(transport),
+        rateLimit: {
+            status: (namespace?: string) => transport.rateLimitStatus(namespace),
+            all: () => transport.rateLimitStatuses(),
+        },
     }
 }

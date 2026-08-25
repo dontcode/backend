@@ -60,7 +60,10 @@ function describeError(err: unknown): string {
             return `Your project role does not allow that. (${err.message})`
         }
         if (err.rateLimited) {
-            return `Rate limited. ${err.message}`
+            const wait = err.retryAfter
+            return wait === undefined
+                ? `Rate limited. ${err.message}`
+                : `Rate limited. ${err.message} Wait ${wait}s before retrying.`
         }
         return err.message
     }

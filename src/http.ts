@@ -1,4 +1,5 @@
 import { DontCodeError, type DontCodeErrorBody } from './errors'
+import { readRateLimit, type RateLimitHints, type RateLimitStatus } from './rate-limit'
 
 /** Default per-request timeout. Without one, a slow or unreachable gateway can
  *  hang a request for the platform's full socket timeout (tens of seconds),
@@ -18,6 +19,11 @@ export interface TransportConfig {
     /** Per-request timeout in ms. Defaults to `DEFAULT_TIMEOUT_MS`; `0` (or any
      *  non-positive value) disables it. */
     timeoutMs?: number
+    /** Called with the rate-limit status of every counted response, refusals
+     *  and successes alike. The success case is the useful one: it lets an app
+     *  ease off at 80% of a budget instead of finding the ceiling by hitting
+     *  it. Throwing from here cannot fail the request. */
+    onRateLimit?: (status: RateLimitStatus) => void
 }
 
 export interface RequestOptions {
@@ -34,7 +40,22 @@ export interface RequestOptions {
  * faithful proxy of the v1 gateway.
  */
 export class Transport {
+    /** Latest status per namespace. Per namespace because that is how the
+     *  budgets are cut: `db` having room says nothing about `db/migrate`. */
+    private readonly limits = new Map<string, RateLimitStatus>()
+    private latest?: RateLimitStatus
+
     constructor(private readonly config: TransportConfig) {}
+
+    /** Latest status for one namespace, or the most recent from any namespace. */
+    rateLimitStatus(namespace?: string): RateLimitStatus | undefined {
+        return namespace ? this.limits.get(namespace) : this.latest
+    }
+
+    /** Latest status for every namespace this transport has called. */
+    rateLimitStatuses(): RateLimitStatus[] {
+        return [...this.limits.values()]
+    }
 
     private headers(opts?: RequestOptions): Record<string, string> {
         const headers: Record<string, string> = {}
@@ -85,7 +106,7 @@ export class Transport {
     /** GET and parse the JSON response. */
     async get<T>(path: string, opts?: RequestOptions): Promise<T> {
         const res = await this.send(path, { method: 'GET', headers: this.headers(opts) }, opts)
-        return this.parse<T>(res)
+        return this.parse<T>(res, path)
     }
 
     /** POST a JSON body and parse the JSON response. */
@@ -99,7 +120,7 @@ export class Transport {
             },
             opts
         )
-        return this.parse<T>(res)
+        return this.parse<T>(res, path)
     }
 
     /** PUT a JSON body and parse the JSON response. */
@@ -113,7 +134,7 @@ export class Transport {
             },
             opts
         )
-        return this.parse<T>(res)
+        return this.parse<T>(res, path)
     }
 
     /** PATCH a JSON body and parse the JSON response. */
@@ -127,22 +148,26 @@ export class Transport {
             },
             opts
         )
-        return this.parse<T>(res)
+        return this.parse<T>(res, path)
     }
 
     /** DELETE and parse the JSON response. */
     async del<T>(path: string, opts?: RequestOptions): Promise<T> {
         const res = await this.send(path, { method: 'DELETE', headers: this.headers(opts) }, opts)
-        return this.parse<T>(res)
+        return this.parse<T>(res, path)
     }
 
     /** PUT a multipart form (file uploads). The runtime sets the boundary. */
     async multipart<T>(path: string, form: FormData, opts?: RequestOptions): Promise<T> {
-        const res = await this.send(path, { method: 'PUT', headers: this.headers(opts), body: form }, opts)
-        return this.parse<T>(res)
+        const res = await this.send(
+            path,
+            { method: 'PUT', headers: this.headers(opts), body: form },
+            opts
+        )
+        return this.parse<T>(res, path)
     }
 
-    private async parse<T>(res: Response): Promise<T> {
+    private async parse<T>(res: Response, path: string): Promise<T> {
         const raw = await res.text()
         let data: unknown = null
         if (raw) {
@@ -152,13 +177,32 @@ export class Transport {
                 data = { error: raw }
             }
         }
+
+        // Read the budget before anything can throw, so a refusal and a
+        // success record it the same way.
+        const hints = (data && typeof data === 'object' ? data : undefined) as
+            | RateLimitHints
+            | undefined
+        const rateLimit = readRateLimit(res.status, res.headers, path, hints)
+        if (rateLimit) this.record(rateLimit)
+
         if (!res.ok) {
             const body: DontCodeErrorBody =
                 data && typeof data === 'object'
                     ? (data as DontCodeErrorBody)
                     : { error: res.statusText || 'Request failed' }
-            throw new DontCodeError(res.status, body)
+            throw new DontCodeError(res.status, body, rateLimit)
         }
         return data as T
+    }
+
+    private record(status: RateLimitStatus): void {
+        this.limits.set(status.namespace, status)
+        this.latest = status
+        try {
+            this.config.onRateLimit?.(status)
+        } catch {
+            // An observer is not allowed to break the call it observed.
+        }
     }
 }
