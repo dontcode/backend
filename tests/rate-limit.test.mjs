@@ -346,3 +346,88 @@ describe('rate limits on the error path', () => {
         assert.equal(client.rateLimit.status('db'), undefined)
     })
 })
+
+describe('a budget the gateway names rather than the path implies', () => {
+    /**
+     * `/api/v1/db` carries two budgets, reads and writes, and the URL is the
+     * same for both. The gateway therefore names the one it counted in
+     * `RateLimit-Scope`, and that name has to win: guessing `db` from the path
+     * would file both under one key, where each response overwrites the other's
+     * reading and the caller paces itself off a number that flips.
+     */
+    it('files a budget under the scope the gateway reports, not the path', async () => {
+        const client = dontcode({ apiKey: 'dc_test' })
+        mockResponse({
+            body: { data: [] },
+            headers: {
+                ...budget({ limit: 900, remaining: 873, policy: '900;w=60' }),
+                'RateLimit-Scope': 'db/read',
+            },
+        })
+
+        await client.db.users.find()
+
+        assert.equal(client.rateLimit.status('db/read').remaining, 873)
+        // Nothing under the path-derived name: one response, one budget.
+        assert.equal(client.rateLimit.status('db'), undefined)
+    })
+
+    it('tracks db reads and db writes as the separate budgets they are', async () => {
+        const client = dontcode({ apiKey: 'dc_test' })
+
+        mockResponse({
+            body: { data: [] },
+            headers: { ...budget({ limit: 900, remaining: 12 }), 'RateLimit-Scope': 'db/read' },
+        })
+        await client.db.users.find()
+
+        mockResponse({
+            body: { data: {} },
+            headers: { ...budget({ limit: 300, remaining: 299 }), 'RateLimit-Scope': 'db/write' },
+        })
+        await client.db.users.insert({ name: 'ada' })
+
+        // Exhausting reads must not make writes look exhausted too, or a
+        // client backs off from mutations it was still perfectly free to send.
+        assert.equal(client.rateLimit.status('db/read').remaining, 12)
+        assert.equal(client.rateLimit.status('db/write').remaining, 299)
+        assert.deepEqual(
+            client.rateLimit
+                .all()
+                .map((s) => s.namespace)
+                .sort(),
+            ['db/read', 'db/write']
+        )
+    })
+
+    it('agrees with the gateway on which db budget refused the call', async () => {
+        const client = dontcode({ apiKey: 'dc_test' })
+        mockResponse({
+            status: 429,
+            body: { error: 'Rate limit exceeded.', rate_limit: true, timeleft: 8, scope: 'db/write' },
+            headers: { 'RateLimit-Scope': 'db/write', 'Retry-After': 8 },
+        })
+
+        const err = await client.db.users
+            .insert({ name: 'ada' })
+            .then(() => null)
+            .catch((e) => e)
+
+        assert.ok(isDontCodeError(err))
+        // `err.scope` and `err.rateLimit.namespace` must be one string, or
+        // anything counting per budget counts the same bucket twice.
+        assert.equal(err.rateLimit.namespace, 'db/write')
+        assert.equal(err.scope, err.rateLimit.namespace)
+        assert.equal(err.rateLimit.retryAfter, 8)
+    })
+
+    it('still derives a name from the path when no scope is sent', async () => {
+        const client = dontcode({ apiKey: 'dc_test' })
+        mockResponse({ body: { data: [] }, headers: budget({ limit: 600, remaining: 599 }) })
+
+        await client.db.users.find()
+
+        // Older gateways send no scope. Falling back beats dropping the budget.
+        assert.equal(client.rateLimit.status('db').remaining, 599)
+    })
+})

@@ -344,14 +344,15 @@ try {
 
 ### Rate limits
 
-Budgets are per project and per namespace (`db`, `auth`, `storage`, `db/migrate`, …), so a
-chatty realtime loop cannot starve a migration. The client reports what it last heard about
-each one, on **successful** responses as well as refusals, which is the point: you can ease
-off before you are refused instead of discovering the ceiling by hitting it.
+Budgets are per project and per namespace (`db/read`, `db/write`, `auth`, `storage`,
+`db/migrate`, …), so a chatty realtime loop cannot starve a migration. The client reports
+what it last heard about each one, on **successful** responses as well as refusals, which is
+the point: you can ease off before you are refused instead of discovering the ceiling by
+hitting it.
 
 ```ts
-const status = client.rateLimit.status('db')
-// { namespace: 'db', limit: 600, remaining: 214, reset: 37, policy: '600;w=60', exceeded: false }
+const status = client.rateLimit.status('db/read')
+// { namespace: 'db/read', limit: 900, remaining: 214, reset: 37, policy: '900;w=60', exceeded: false }
 
 if (status && status.remaining !== undefined && status.remaining < status.limit * 0.2) {
     await sleep(status.reset * 1000) // let the window roll over before the next batch
@@ -360,6 +361,12 @@ if (status && status.remaining !== undefined && status.remaining < status.limit 
 client.rateLimit.status() // most recent namespace, whichever it was
 client.rateLimit.all() // one entry per namespace this client has called
 ```
+
+Database reads and writes are **separate budgets**, `db/read` and `db/write`, even though
+both go to the same endpoint. Queries (`find`, `findMany`, `findFirst`, `findOne`, `count`)
+count against the first; `insert`, `update` and `delete` against the second. A read loop
+that exhausts its own budget therefore still leaves your writes free, so pace them
+independently rather than treating "the database" as one number.
 
 `undefined` means nothing has been counted for that namespace yet, which is different from
 "the budget is empty". For long-running work prefer the callback, so pacing is a decision you

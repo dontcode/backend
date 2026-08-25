@@ -23,8 +23,10 @@ export interface HeaderReader {
  *  field is optional because a response that wasn't counted reports none of
  *  them, and guessing a number there would be worse than admitting silence. */
 export interface RateLimitStatus {
-    /** Public v1 namespace the budget belongs to: `db`, `db/migrate`, `auth`, …
-     *  Always the same string the gateway reports as `scope` on a refusal. */
+    /** Public name of the budget: `db/read`, `db/write`, `db/migrate`, `auth`, …
+     *  Always the same string the gateway reports as `RateLimit-Scope`, and as
+     *  `scope` on a refusal. Note that `/api/v1/db` has two budgets, so its
+     *  reads and writes are tracked separately. */
     namespace: string
     /** Requests allowed per window. */
     limit?: number
@@ -70,9 +72,12 @@ export interface RateLimitHints {
 const NESTED_NAMESPACES = ['auth/device/start', 'db/migrate']
 
 /**
- * The namespace a request path spends from. Derived from the path rather than
- * from the response, because the path is known on every call while the
- * server only names the budget when it refuses one.
+ * The namespace a request path spends from. A fallback only: it is a guess, and
+ * one path can spend from more than one budget. `POST /api/v1/db` draws on
+ * `db/read` for queries and `db/write` for mutations, and nothing in the URL
+ * says which. Prefer the `RateLimit-Scope` the gateway sends; come here when a
+ * response carries none, so a budget is still tracked under a sensible name
+ * rather than dropped.
  */
 export function namespaceFromPath(path: string): string {
     const rest = path.replace(/^\/api\/v1/, '').replace(/^\/+/, '')
@@ -121,6 +126,7 @@ export function readRateLimit(
         }
     }
 
+    const scope = read('RateLimit-Scope') || undefined
     const limit = num(read('RateLimit-Limit'))
     const remaining = num(read('RateLimit-Remaining'))
     const reset = num(read('RateLimit-Reset'))
@@ -143,7 +149,10 @@ export function readRateLimit(
         : retryAfterHeader
 
     return {
-        namespace: namespaceFromPath(path),
+        // The gateway is authoritative about which budget it counted; the path
+        // is only a guess, and a wrong guess makes two budgets overwrite each
+        // other's readings under one key.
+        namespace: scope ?? namespaceFromPath(path),
         ...(limit !== undefined ? { limit } : {}),
         ...(remaining !== undefined ? { remaining } : {}),
         ...(reset !== undefined ? { reset } : {}),
