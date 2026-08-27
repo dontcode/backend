@@ -71,8 +71,8 @@
         "dist"
     ],
     "dependencies": {
-        "@modelcontextprotocol/sdk": "^1.12.0",
-        "zod": "^3.23.0"
+        "@modelcontextprotocol/sdk": "1.12.0",
+        "zod": "3.23.0"
     },
     "devDependencies": {
         "@electric-sql/pglite": "0.5.3",
@@ -84,7 +84,7 @@
         "typescript": "5.9.3"
     },
     "optionalDependencies": {
-        "@electric-sql/pglite": "^0.5.3"
+        "@electric-sql/pglite": "0.5.3"
     },
     "publishConfig": {
         "access": "public"
