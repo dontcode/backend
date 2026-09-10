@@ -65,7 +65,7 @@
     "scripts": {
         "build": "tsup && tsc --emitDeclarationOnly",
         "test": "npm run build && node --test tests/*.test.mjs",
-        "prepublishOnly": "npm run build"
+        "prepublishOnly": "node scripts/publish-preflight.mjs && npm run build"
     },
     "files": [
         "dist"
