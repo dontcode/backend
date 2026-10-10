@@ -74,6 +74,63 @@ describe('mock gateway — auth', () => {
         assert.equal(me.user.email, 'a@b.com')
     })
 
+    it("refuses a duplicate with the live service's status and code", async () => {
+        await client.auth.signup({ email: 'twice@b.com', password: 'pw' })
+        await assert.rejects(
+            () => client.auth.signup({ email: 'twice@b.com', password: 'pw' }),
+            (err) =>
+                isDontCodeError(err) && err.status === 400 && err.code === 'EmailExistsException'
+        )
+    })
+
+    it('refuses a throwaway inbox, with no suggestion', async () => {
+        await assert.rejects(
+            () => client.auth.signup({ email: 'bot@mailinator.com', password: 'pw' }),
+            (err) =>
+                isDontCodeError(err) &&
+                err.status === 400 &&
+                err.code === 'UndeliverableEmailException' &&
+                err.didYouMean === undefined
+        )
+    })
+
+    it('refuses an address that cannot receive mail, and suggests the fix', async () => {
+        await assert.rejects(
+            () => client.auth.signup({ email: 'jane@naver.con', password: 'pw' }),
+            (err) =>
+                isDontCodeError(err) &&
+                err.code === 'UndeliverableEmailException' &&
+                err.didYouMean === 'jane@naver.com'
+        )
+        // acceptAsTyped never rescues an undeliverable address.
+        await assert.rejects(
+            () =>
+                client.auth.signup({
+                    email: 'jane@naver.con',
+                    password: 'pw',
+                    acceptAsTyped: true,
+                }),
+            (err) => isDontCodeError(err) && err.code === 'UndeliverableEmailException'
+        )
+    })
+
+    it('pauses a likely typo, and keeps it when the person confirms', async () => {
+        await assert.rejects(
+            () => client.auth.signup({ email: 'jane@gmai.com', password: 'pw' }),
+            (err) =>
+                isDontCodeError(err) &&
+                err.status === 422 &&
+                err.code === 'EmailTypoSuspected' &&
+                err.didYouMean === 'jane@gmail.com'
+        )
+        const kept = await client.auth.signup({
+            email: 'jane@gmai.com',
+            password: 'pw',
+            acceptAsTyped: true,
+        })
+        assert.equal(kept.success, true)
+    })
+
     it('deletes an account after the emailed code, and only with the code', async () => {
         await client.auth.signup({ email: 'gone@b.com', password: 'pw' })
         const { tokens } = await client.auth.login({ email: 'gone@b.com', password: 'pw' })

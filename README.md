@@ -179,6 +179,26 @@ const { recovery_codes } = await client.auth.mfa.enrollConfirm({ accessToken, co
 await client.auth.mfa.disable({ accessToken, code })
 ```
 
+Signup checks the address first. Offer the platform's correction when it has one:
+
+```ts
+try {
+    await client.auth.signup({ email, password })
+} catch (err) {
+    if (isDontCodeError(err) && err.code === 'EmailTypoSuspected') {
+        // 422: the address works but looks like a slip (gmai.com). Show
+        // "Did you mean ${err.didYouMean}?"; to keep it as typed:
+        await client.auth.signup({ email, password, acceptAsTyped: true })
+    } else if (isDontCodeError(err) && err.code === 'UndeliverableEmailException') {
+        // 400: cannot receive mail, or a throwaway inbox. err.didYouMean may
+        // hold a fix; acceptAsTyped does not get past this one.
+    }
+}
+```
+
+The mock gateway refuses `@mailinator.com` and `@naver.con` (suggesting `naver.com`) and
+pauses `@gmai.com` (suggesting `gmail.com`), so both paths run offline.
+
 Also available: `forgotPassword({ email })`, `resetPassword({ code, password })`.
 
 Account deletion (signed-in user, confirmed by an emailed code; delete your own rows for
@@ -343,7 +363,8 @@ try {
 } catch (err) {
     if (isDontCodeError(err)) {
         err.status // 401, 403, 409, 429, …
-        err.code // e.g. 'EmailNotVerified', 'ChallengeExpired'
+        err.code // e.g. 'EmailNotVerified', 'ChallengeExpired', 'EmailExistsException'
+        err.didYouMean // a corrected email address on a signup refusal, when offered
         err.rateLimited // true when a rate limit refused the call
         err.retryAfter // seconds to wait, when the responder said
         err.body // the full error envelope

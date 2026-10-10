@@ -78,6 +78,50 @@ const ACCESS_TOKEN_TTL_SECONDS = 60 * 60 * 24 * 7 // 7 days, matches the default
 
 // ── small helpers ────────────────────────────────────────────────────────────
 
+/**
+ * A few fixed examples of the live platform's sign-up address check, so the
+ * error paths can be exercised offline. The real check (DNS, a maintained
+ * disposable list, typo detection) runs only behind the live gateway.
+ */
+const MOCK_DISPOSABLE = new Set([
+    'mailinator.com',
+    'guerrillamail.com',
+    '10minutemail.com',
+    'yopmail.com',
+])
+/** Domains that cannot receive mail, with the provider they were meant to be. */
+const MOCK_UNDELIVERABLE: Record<string, string | null> = {
+    'gmail.con': 'gmail.com',
+    'naver.con': 'naver.com',
+    'example.invalid': null,
+}
+/** Working domains that look like a slip of a common provider. */
+const MOCK_TYPOS: Record<string, string> = {
+    'gmai.com': 'gmail.com',
+    'gamil.com': 'gmail.com',
+    'hotmial.com': 'hotmail.com',
+}
+
+export function mockAddressCheck(
+    email: string
+):
+    | { kind: 'ok' }
+    | { kind: 'undeliverable'; didYouMean?: string }
+    | { kind: 'typo'; didYouMean: string } {
+    const at = email.lastIndexOf('@')
+    const local = email.slice(0, at)
+    const domain = email.slice(at + 1).toLowerCase()
+    if (MOCK_DISPOSABLE.has(domain)) return { kind: 'undeliverable' }
+    if (domain in MOCK_UNDELIVERABLE) {
+        const fix = MOCK_UNDELIVERABLE[domain]
+        return fix
+            ? { kind: 'undeliverable', didYouMean: `${local}@${fix}` }
+            : { kind: 'undeliverable' }
+    }
+    if (domain in MOCK_TYPOS) return { kind: 'typo', didYouMean: `${local}@${MOCK_TYPOS[domain]}` }
+    return { kind: 'ok' }
+}
+
 function b64url(value: string | object): string {
     const str = typeof value === 'string' ? value : JSON.stringify(value)
     return Buffer.from(str).toString('base64url')
@@ -451,8 +495,34 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
                     sendJson(res, 400, { error: 'Email and password are required' })
                     return
                 }
+                const addressCheck = mockAddressCheck(email)
+                if (addressCheck.kind === 'undeliverable') {
+                    sendJson(res, 400, {
+                        success: false,
+                        error: "This email address can't receive mail. Please check it and try again.",
+                        code: 'UndeliverableEmailException',
+                        ...(addressCheck.didYouMean
+                            ? { did_you_mean: addressCheck.didYouMean }
+                            : {}),
+                    })
+                    return
+                }
+                if (addressCheck.kind === 'typo' && body.accept_as_typed !== true) {
+                    sendJson(res, 422, {
+                        success: false,
+                        error: `Did you mean ${addressCheck.didYouMean}? Check the address and try again.`,
+                        code: 'EmailTypoSuspected',
+                        did_you_mean: addressCheck.didYouMean,
+                    })
+                    return
+                }
                 if (users.has(email.toLowerCase())) {
-                    sendJson(res, 409, { error: 'Email already registered', code: 'EmailExists' })
+                    // Same status and code as the live auth service.
+                    sendJson(res, 400, {
+                        success: false,
+                        error: 'An account with this email already exists',
+                        code: 'EmailExistsException',
+                    })
                     return
                 }
                 const user: MockUser = {

@@ -69,6 +69,10 @@ export interface SignupInput {
     password: string
     name?: string
     role?: string
+    /** Keep an address the platform paused as a likely typo (a 422
+     *  `EmailTypoSuspected` whose `didYouMean` the person declined). Never
+     *  overrides an address that cannot receive mail. */
+    acceptAsTyped?: boolean
 }
 
 export interface SignupResult {

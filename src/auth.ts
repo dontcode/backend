@@ -110,13 +110,20 @@ export class AuthApi {
 
     /** Create an account. If the project requires email verification the
      *  response has `verification_required: true` and NO tokens; collect a
-     *  code and call `verifyEmail`, then `login`. */
+     *  code and call `verifyEmail`, then `login`.
+     *
+     *  The platform checks the address first. One that cannot receive mail or
+     *  is a throwaway inbox fails with 400 `UndeliverableEmailException`; a
+     *  likely typo of a working domain (gmai.com) pauses with 422
+     *  `EmailTypoSuspected`. Both may carry `err.didYouMean`: offer it, and to
+     *  keep a paused address as typed, call again with `acceptAsTyped: true`. */
     signup(input: SignupInput): Promise<SignupResult> {
         return this.transport.json<SignupResult>(`${AUTH_BASE}/signup`, {
             email: input.email,
             password: input.password,
             name: input.name,
             role: input.role,
+            ...(input.acceptAsTyped === true ? { accept_as_typed: true } : {}),
         })
     }
 

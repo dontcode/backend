@@ -26,6 +26,9 @@ export interface DontCodeErrorBody {
     timeleft?: number
     /** Which budget was exhausted, on rate-limit refusals. */
     scope?: string
+    /** A corrected email address on a sign-up refusal
+     *  (`UndeliverableEmailException`, `EmailTypoSuspected`). */
+    did_you_mean?: string
     [key: string]: unknown
 }
 
@@ -71,6 +74,13 @@ export class DontCodeError extends Error {
         if (this.rateLimit?.retryAfter !== undefined) return this.rateLimit.retryAfter
         const timeleft = this.body.timeleft
         return typeof timeleft === 'number' && Number.isFinite(timeleft) ? timeleft : undefined
+    }
+
+    /** A corrected email address the platform suggested on a sign-up
+     *  refusal (e.g. `jane@gmail.com` for `jane@gmai.com`), safe to offer the
+     *  person typing. */
+    get didYouMean(): string | undefined {
+        return typeof this.body.did_you_mean === 'string' ? this.body.did_you_mean : undefined
     }
 
     /** Which budget was exhausted, when the responder named it. */
