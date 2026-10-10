@@ -67,7 +67,9 @@ Apply your schema the same way you would in production, then use the client norm
 
 ```ts
 const client = dontcode() // reads the env vars above
-await client.db.migrate({ sql: 'CREATE TABLE IF NOT EXISTS notes (id serial primary key, body text);' })
+await client.db.migrate({
+    sql: 'CREATE TABLE IF NOT EXISTS notes (id serial primary key, body text);',
+})
 await client.db.notes.insert({ body: 'hello from the mock' })
 ```
 
@@ -90,8 +92,8 @@ You can also drive it programmatically — handy for integration tests that need
 clean backend per run:
 
 ```ts
-import { startMockServer } from 'dontcode/mock'
 import { dontcode } from 'dontcode'
+import { startMockServer } from 'dontcode/mock'
 
 const mock = await startMockServer({ dataDir: null }) // ephemeral
 const client = dontcode({ baseUrl: mock.url, apiKey: 'dc_test' })
@@ -109,12 +111,12 @@ you.
 ```jsonc
 // .mcp.json (Claude Code)
 {
-  "mcpServers": {
-    "dontcode": {
-      "command": "npx",
-      "args": ["-y", "dontcode", "mcp"]
-    }
-  }
+    "mcpServers": {
+        "dontcode": {
+            "command": "npx",
+            "args": ["-y", "dontcode", "mcp"],
+        },
+    },
 }
 ```
 
@@ -178,6 +180,16 @@ await client.auth.mfa.disable({ accessToken, code })
 ```
 
 Also available: `forgotPassword({ email })`, `resetPassword({ code, password })`.
+
+Account deletion (signed-in user, confirmed by an emailed code; delete your own rows for
+them first, the platform removes the identity and revokes their sessions):
+
+```ts
+await client.auth.requestAccountDeletion({ accessToken }) // emails a 6-digit code
+await client.auth.deleteAccount({ accessToken, code }) // `code_wrong` / `code_expired` on failure
+```
+
+The mock gateway accepts `123456` as the code.
 
 ## Database
 
@@ -391,7 +403,7 @@ one.
 ### Payment errors
 
 Payment calls (`client.payments.*`) throw the same `DontCodeError`. Forward
-`err.message` to the buyer and branch on `err.code` so they see *why* a charge
+`err.message` to the buyer and branch on `err.code` so they see _why_ a charge
 could not start, instead of a generic "something went wrong". Do not collapse a
 `402` into a `500`: the status is meaningful, and the message is safe to show.
 
@@ -408,17 +420,17 @@ try {
 
 The most common codes:
 
-| `code` | Status | What it means | How to resolve |
-| --- | --- | --- | --- |
-| `BANK_ACCOUNT_REQUIRED` | 402 | The app has no payout bank account, so it cannot accept payments yet. | **App owner:** add a payout bank account in the project **Payments** tab, then wait for it to verify. |
-| `BANK_ACCOUNT_PENDING_VERIFICATION` | 402 | The payout account is still being verified. | Wait for verification to finish; payments resume automatically. |
-| `BANK_ACCOUNT_GRACE_EXPIRED` | 402 | The payout account stayed unverified past its grace window. | **App owner:** re-verify the account in the project **Payments** tab. |
-| `BANK_ACCOUNT_SUSPENDED` | 402 | The payout account is suspended. | Contact support. |
-| `CHARGE_FAILED` | 402 | The buyer's payment was declined. | **Buyer:** retry or use a different payment method. |
-| `PAYMENT_VERIFICATION_FAILED` | 402 | The completed payment could not be verified against the recorded amount. | Confirm the amount and currency match the plan, then retry. |
-| `SUBSCRIPTION_NOT_FOUND` | 404 | No subscription for that id/user, or it has no saved billing method. | Re-reserve the subscription before confirming or charging. |
-| `BILLING_KEY_MISSING` | 400 | The operation needs a saved billing method that is not present. | Complete the reserve then confirm flow so a billing method is stored. |
-| `RATE_LIMITED` | 429 | Too many payment requests for this project. | Back off and retry after `err.body.timeleft` seconds (`err.rateLimited` is `true`). |
+| `code`                              | Status | What it means                                                            | How to resolve                                                                                        |
+| ----------------------------------- | ------ | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `BANK_ACCOUNT_REQUIRED`             | 402    | The app has no payout bank account, so it cannot accept payments yet.    | **App owner:** add a payout bank account in the project **Payments** tab, then wait for it to verify. |
+| `BANK_ACCOUNT_PENDING_VERIFICATION` | 402    | The payout account is still being verified.                              | Wait for verification to finish; payments resume automatically.                                       |
+| `BANK_ACCOUNT_GRACE_EXPIRED`        | 402    | The payout account stayed unverified past its grace window.              | **App owner:** re-verify the account in the project **Payments** tab.                                 |
+| `BANK_ACCOUNT_SUSPENDED`            | 402    | The payout account is suspended.                                         | Contact support.                                                                                      |
+| `CHARGE_FAILED`                     | 402    | The buyer's payment was declined.                                        | **Buyer:** retry or use a different payment method.                                                   |
+| `PAYMENT_VERIFICATION_FAILED`       | 402    | The completed payment could not be verified against the recorded amount. | Confirm the amount and currency match the plan, then retry.                                           |
+| `SUBSCRIPTION_NOT_FOUND`            | 404    | No subscription for that id/user, or it has no saved billing method.     | Re-reserve the subscription before confirming or charging.                                            |
+| `BILLING_KEY_MISSING`               | 400    | The operation needs a saved billing method that is not present.          | Complete the reserve then confirm flow so a billing method is stored.                                 |
+| `RATE_LIMITED`                      | 429    | Too many payment requests for this project.                              | Back off and retry after `err.body.timeleft` seconds (`err.rateLimited` is `true`).                   |
 
 The `BANK_ACCOUNT_*` codes are setup states, not bugs: a brand-new project
 returns `BANK_ACCOUNT_REQUIRED` on every charge until its owner links and

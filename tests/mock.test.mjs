@@ -74,6 +74,36 @@ describe('mock gateway — auth', () => {
         assert.equal(me.user.email, 'a@b.com')
     })
 
+    it('deletes an account after the emailed code, and only with the code', async () => {
+        await client.auth.signup({ email: 'gone@b.com', password: 'pw' })
+        const { tokens } = await client.auth.login({ email: 'gone@b.com', password: 'pw' })
+        const accessToken = tokens.AccessToken
+
+        const asked = await client.auth.requestAccountDeletion({ accessToken })
+        assert.equal(asked.success, true)
+        assert.equal(asked.email, 'gone@b.com')
+
+        await assert.rejects(
+            () => client.auth.deleteAccount({ accessToken, code: '000000' }),
+            (err) => isDontCodeError(err) && err.status === 400
+        )
+        assert.equal(
+            (await client.auth.deleteAccount({ accessToken, code: '123456' })).success,
+            true
+        )
+        await assert.rejects(
+            () => client.auth.login({ email: 'gone@b.com', password: 'pw' }),
+            (err) => isDontCodeError(err) && err.status === 401
+        )
+    })
+
+    it('refuses account deletion without a session', async () => {
+        await assert.rejects(
+            () => client.auth.requestAccountDeletion({ accessToken: 'not.a.token' }),
+            (err) => isDontCodeError(err) && err.status === 401
+        )
+    })
+
     it('rejects a wrong password with 401', async () => {
         await assert.rejects(
             () => client.auth.login({ email: 'a@b.com', password: 'nope' }),
@@ -184,7 +214,10 @@ describe('mock gateway — realtime', () => {
     })
 
     it('reports presence and fans a client publish out to peers, not the sender', async () => {
-        const { token, url } = await client.realtime.mintToken({ channels: ['game:c'], identity: 'p1' })
+        const { token, url } = await client.realtime.mintToken({
+            channels: ['game:c'],
+            identity: 'p1',
+        })
         const a = await connect(token, url)
         const b = await connect(token, url)
 

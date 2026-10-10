@@ -1,5 +1,5 @@
-import { Transport } from './http'
 import { readSessionToken } from './cookies'
+import { Transport } from './http'
 import {
     SessionVerifier,
     decodeAccessToken,
@@ -9,6 +9,8 @@ import {
     type SessionResult,
 } from './session'
 import type {
+    AccountDeletionRequestResult,
+    DeleteAccountInput,
     ForgotPasswordInput,
     LoginInput,
     LoginResult,
@@ -203,5 +205,32 @@ export class AuthApi {
             password: input.password,
             email: input.email,
         })
+    }
+
+    /**
+     * Self-serve account deletion, step one: email the signed-in person a
+     * 6-digit code. The address is the account's own; nothing in the call
+     * chooses it. Three requests an hour per account.
+     */
+    requestAccountDeletion(input: { accessToken: string }): Promise<AccountDeletionRequestResult> {
+        return this.transport.json<AccountDeletionRequestResult>(
+            `${AUTH_BASE}/account/delete/request`,
+            {},
+            { accessToken: input.accessToken }
+        )
+    }
+
+    /**
+     * Step two: the code confirms it. The platform removes the person's
+     * identity and revokes every session of theirs; the rows your own tables
+     * hold for them are yours to delete, before this call. A wrong code
+     * answers `code_wrong` (five guesses), a stale one `code_expired`.
+     */
+    deleteAccount(input: DeleteAccountInput): Promise<SimpleResult> {
+        return this.transport.json<SimpleResult>(
+            `${AUTH_BASE}/account/delete`,
+            { code: input.code },
+            { accessToken: input.accessToken }
+        )
     }
 }

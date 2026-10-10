@@ -22,9 +22,9 @@
  * and there is no rate limiting. Never expose it to a network you don't trust.
  */
 import { createMockCache } from './cache'
+import { executeDbOperation, type Queryable } from './db-query'
 import { createMockNotifications } from './notifications'
 import { createMockPayments, type PaymentsSnapshot } from './payments'
-import { executeDbOperation, type Queryable } from './db-query'
 import { createMockRealtime } from './realtime'
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -428,6 +428,9 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
 
     // ── Auth ────────────────────────────────────────────────────────────────
 
+    /** The code the mock accepts for account deletion. */
+    const MOCK_DELETION_CODE = '123456'
+
     async function handleAuth(
         req: IncomingMessage,
         res: ServerResponse,
@@ -516,6 +519,36 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
             case 'mfa/disable':
                 sendJson(res, 200, { success: true })
                 return
+
+            // Self-serve account deletion. The mock's code is always 123456;
+            // the real service emails one and allows five guesses.
+            case 'account/delete/request':
+            case 'account/delete': {
+                const decoded = accessToken ? decodeToken(accessToken) : null
+                const user = decoded
+                    ? [...users.values()].find((u) => u.id === decoded.sub)
+                    : undefined
+                if (!user) {
+                    sendJson(res, 401, { success: false, error: 'Not signed in' })
+                    return
+                }
+                if (endpoint === 'account/delete/request') {
+                    sendJson(res, 200, { success: true, email: user.email, expires_in_minutes: 15 })
+                    return
+                }
+                if (String(body.code ?? '') !== MOCK_DELETION_CODE) {
+                    sendJson(res, 400, {
+                        success: false,
+                        error: 'code_wrong',
+                        message: 'That code is not right.',
+                    })
+                    return
+                }
+                users.delete(user.email.toLowerCase())
+                persistUsers()
+                sendJson(res, 200, { success: true })
+                return
+            }
 
             case 'mfa/challenge':
                 // The mock's login never demands a second factor, so a challenge

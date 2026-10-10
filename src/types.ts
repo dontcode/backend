@@ -151,6 +151,20 @@ export interface MfaDisableInput {
     recoveryCode?: string
 }
 
+export interface AccountDeletionRequestResult {
+    success: boolean
+    /** The address the code went to: the account's own. */
+    email?: string
+    expires_in_minutes?: number
+    error?: string
+}
+
+export interface DeleteAccountInput {
+    accessToken: string
+    /** The 6-digit code from the email. */
+    code: string
+}
+
 export interface SimpleResult {
     success: boolean
     message?: string
