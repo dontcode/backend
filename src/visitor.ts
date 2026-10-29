@@ -14,8 +14,8 @@
  * The headers the visitor travels in. Twins, change all together: the v1
  * gateway (dontcode-backend lib/public-api/visitor.ts, VISITOR_HEADERS), which
  * passes them on only for a request carrying your API key; the auth service
- * (auth-service lib/db/extract-request-info.ts, CLIENT_IP_HEADER and the agent
- * and country names beside it); and @dontcode/auth (src/server/client-ip.ts).
+ * (auth-service lib/auth/visitor.ts, VISITOR_HEADERS); and @dontcode/auth
+ * (src/server/visitor-headers.ts).
  */
 export const VISITOR_HEADERS = {
     ip: 'x-dontcode-client-ip',
