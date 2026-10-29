@@ -2,6 +2,7 @@
  * Wire shapes for the v1 gateway. These mirror the platform contract; they are
  * intentionally loose where the platform is (claims, tokens) and additive-only.
  */
+import type { ForVisitor } from './visitor'
 
 // ---------------------------------------------------------------------------
 // Database: structured-query protocol (raw SQL is never accepted here)
@@ -64,7 +65,7 @@ export interface MigrateResult {
 // Auth
 // ---------------------------------------------------------------------------
 
-export interface SignupInput {
+export interface SignupInput extends ForVisitor {
     email: string
     password: string
     name?: string
@@ -83,7 +84,7 @@ export interface SignupResult {
     message?: string
 }
 
-export interface LoginInput {
+export interface LoginInput extends ForVisitor {
     email: string
     password: string
 }
@@ -105,17 +106,17 @@ export interface LoginResult {
     challenge_expires_in?: number
 }
 
-export interface VerifyEmailInput {
+export interface VerifyEmailInput extends ForVisitor {
     code: string
     /** Accepted but ignored; the code alone resolves the user. */
     email?: string
 }
 
-export interface ForgotPasswordInput {
+export interface ForgotPasswordInput extends ForVisitor {
     email: string
 }
 
-export interface ResetPasswordInput {
+export interface ResetPasswordInput extends ForVisitor {
     code: string
     password: string
     email?: string
@@ -132,7 +133,7 @@ export interface MeResult {
     user: CurrentUser | null
 }
 
-export interface MfaChallengeInput {
+export interface MfaChallengeInput extends ForVisitor {
     challengeToken: string
     code?: string
     recoveryCode?: string
@@ -144,12 +145,12 @@ export interface MfaEnrollResult {
     otpauth_url?: string
 }
 
-export interface MfaEnrollConfirmInput {
+export interface MfaEnrollConfirmInput extends ForVisitor {
     accessToken: string
     code: string
 }
 
-export interface MfaDisableInput {
+export interface MfaDisableInput extends ForVisitor {
     accessToken: string
     code?: string
     recoveryCode?: string
@@ -163,7 +164,7 @@ export interface AccountDeletionRequestResult {
     error?: string
 }
 
-export interface DeleteAccountInput {
+export interface DeleteAccountInput extends ForVisitor {
     accessToken: string
     /** The 6-digit code from the email. */
     code: string

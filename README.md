@@ -148,6 +148,20 @@ The API key (`Authorization: Bearer dc_…`) identifies your **project** and is 
 every call. The **end-user** access token is separate; pass it as `accessToken` to any
 signed-in call and it travels in the `X-Access-Token` header. Your app owns the session.
 
+Pass the request your server is answering as `request` on every auth call. The platform
+then limits sign-in attempts per visitor, by their own address, device and country,
+instead of counting every visitor of your app as one:
+
+```ts
+// A Fetch Request: Next route handlers, SvelteKit, Remix, Hono's c.req.raw
+const login = await client.auth.login({ email, password, request })
+
+// Node's req (Express, Fastify, Koa), or await headers() in a Next server action
+const login = await client.auth.login({ email, password, request: req })
+```
+
+Leave it out and the call still works; the per-address limit is skipped for it.
+
 ```ts
 // Two project settings shape these flows, so handle both states:
 //   • email verification: signup may NOT return tokens

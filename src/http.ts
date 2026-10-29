@@ -1,5 +1,6 @@
 import { DontCodeError, type DontCodeErrorBody } from './errors'
 import { readRateLimit, type RateLimitHints, type RateLimitStatus } from './rate-limit'
+import { visitorHeaders, type ForVisitor } from './visitor'
 
 /** Default per-request timeout. Without one, a slow or unreachable gateway can
  *  hang a request for the platform's full socket timeout (tens of seconds),
@@ -26,7 +27,7 @@ export interface TransportConfig {
     onRateLimit?: (status: RateLimitStatus) => void
 }
 
-export interface RequestOptions {
+export interface RequestOptions extends ForVisitor {
     /** End-user access token, sent as `X-Access-Token` (separate from the
      *  project API key). Required by signed-in auth calls. */
     accessToken?: string
@@ -58,7 +59,7 @@ export class Transport {
     }
 
     private headers(opts?: RequestOptions): Record<string, string> {
-        const headers: Record<string, string> = {}
+        const headers = visitorHeaders(opts?.request)
         if (this.config.apiKey) headers['Authorization'] = `Bearer ${this.config.apiKey}`
         if (this.config.appUrl) headers['X-App-Url'] = this.config.appUrl
         if (opts?.accessToken) headers['X-Access-Token'] = opts.accessToken

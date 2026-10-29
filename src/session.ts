@@ -1,6 +1,7 @@
-import { isDontCodeError } from './errors'
 import type { AuthApi } from './auth'
+import { isDontCodeError } from './errors'
 import type { CurrentUser } from './types'
+import type { ForVisitor } from './visitor'
 
 /**
  * Session helpers, framework-agnostic by design. They never touch a request or
@@ -60,7 +61,7 @@ export interface SessionResult {
     expiresAt?: number
 }
 
-export interface GetSessionInput {
+export interface GetSessionInput extends ForVisitor {
     accessToken: string
     /** `optimistic` (default): decode locally, zero network. `verified`: confirm
      *  against the gateway with caching + a hard timeout. */
@@ -187,7 +188,11 @@ export class SessionVerifier {
         this.verifyTimeoutMs = options.verifyTimeoutMs ?? DEFAULT_VERIFY_TIMEOUT_MS
     }
 
-    async getSession({ accessToken, mode = 'optimistic' }: GetSessionInput): Promise<SessionResult> {
+    async getSession({
+        accessToken,
+        mode = 'optimistic',
+        request,
+    }: GetSessionInput): Promise<SessionResult> {
         const decoded = decodeAccessToken(accessToken)
         if (!decoded) return { status: 'anonymous', user: null, verified: false }
         if (isSessionExpired(decoded)) {
@@ -209,6 +214,7 @@ export class SessionVerifier {
             const { user } = await this.auth.me({
                 accessToken,
                 timeoutMs: this.verifyTimeoutMs,
+                request,
             })
             const result: SessionResult = user
                 ? { status: 'active', user, verified: true, expiresAt: decoded.exp }

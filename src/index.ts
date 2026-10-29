@@ -8,6 +8,7 @@ export type { RateLimitStatus, RateLimitView } from './rate-limit'
 
 export { AuthApi, MfaApi } from './auth'
 export type { InfoResult } from './auth'
+export type { ForVisitor, VisitorRequest } from './visitor'
 export { TableQuery, type DbClient } from './db'
 export { BucketClient, PublicBucketClient, createStorage, type StorageClient } from './storage'
 export { CacheClient, createCache } from './cache'
@@ -15,11 +16,7 @@ export { RealtimeApi, createRealtime } from './realtime'
 export { NotificationsApi, NotificationEmailApi, createNotifications } from './notifications'
 export { PaymentsApi, createPayments } from './payments'
 
-export {
-    decodeAccessToken,
-    isSessionExpired,
-    InMemorySessionCache,
-} from './session'
+export { decodeAccessToken, isSessionExpired, InMemorySessionCache } from './session'
 export type {
     DecodedSession,
     GetSessionInput,

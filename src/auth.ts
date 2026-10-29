@@ -25,6 +25,7 @@ import type {
     SimpleResult,
     VerifyEmailInput,
 } from './types'
+import type { ForVisitor } from './visitor'
 
 const AUTH_BASE = '/api/v1/auth'
 
@@ -52,20 +53,24 @@ export class MfaApi {
     /** Complete an MFA login. Pass the `challenge_token` from `login`, plus
      *  either the authenticator `code` or a `recoveryCode`. */
     challenge(input: MfaChallengeInput): Promise<LoginResult> {
-        return this.transport.json<LoginResult>(`${AUTH_BASE}/mfa/challenge`, {
-            challenge_token: input.challengeToken,
-            code: input.code,
-            recovery_code: input.recoveryCode,
-        })
+        return this.transport.json<LoginResult>(
+            `${AUTH_BASE}/mfa/challenge`,
+            {
+                challenge_token: input.challengeToken,
+                code: input.code,
+                recovery_code: input.recoveryCode,
+            },
+            { request: input.request }
+        )
     }
 
     /** Begin enrollment. Render the returned `otpauth_url` as a QR code.
      *  Enrollment stays pending until `enrollConfirm`. */
-    enroll(input: { accessToken: string }): Promise<MfaEnrollResult> {
+    enroll(input: { accessToken: string } & ForVisitor): Promise<MfaEnrollResult> {
         return this.transport.json<MfaEnrollResult>(
             `${AUTH_BASE}/mfa/enroll`,
             {},
-            { accessToken: input.accessToken }
+            { accessToken: input.accessToken, request: input.request }
         )
     }
 
@@ -75,7 +80,7 @@ export class MfaApi {
         return this.transport.json<SimpleResult>(
             `${AUTH_BASE}/mfa/enroll/confirm`,
             { code: input.code },
-            { accessToken: input.accessToken }
+            { accessToken: input.accessToken, request: input.request }
         )
     }
 
@@ -85,7 +90,7 @@ export class MfaApi {
         return this.transport.json<SimpleResult>(
             `${AUTH_BASE}/mfa/disable`,
             { code: input.code, recovery_code: input.recoveryCode },
-            { accessToken: input.accessToken }
+            { accessToken: input.accessToken, request: input.request }
         )
     }
 }
@@ -95,6 +100,10 @@ export class MfaApi {
  * project settings (not API flags) and your code must handle both states:
  * email verification (signup may not return tokens) and MFA (login may be two
  * steps). Branch on the resolved value; never assume one round-trip.
+ *
+ * Pass `request` (the request your server is answering) on every call made
+ * for a visitor, so the platform's per-visitor sign-in limits count that
+ * visitor rather than your server (see `visitorHeaders`).
  */
 export class AuthApi {
     readonly mfa: MfaApi
@@ -118,23 +127,28 @@ export class AuthApi {
      *  `EmailTypoSuspected`. Both may carry `err.didYouMean`: offer it, and to
      *  keep a paused address as typed, call again with `acceptAsTyped: true`. */
     signup(input: SignupInput): Promise<SignupResult> {
-        return this.transport.json<SignupResult>(`${AUTH_BASE}/signup`, {
-            email: input.email,
-            password: input.password,
-            name: input.name,
-            role: input.role,
-            ...(input.acceptAsTyped === true ? { accept_as_typed: true } : {}),
-        })
+        return this.transport.json<SignupResult>(
+            `${AUTH_BASE}/signup`,
+            {
+                email: input.email,
+                password: input.password,
+                name: input.name,
+                role: input.role,
+                ...(input.acceptAsTyped === true ? { accept_as_typed: true } : {}),
+            },
+            { request: input.request }
+        )
     }
 
     /** Authenticate. Branch on `mfa_required`: when true you hold only a
      *  challenge (finish via `mfa.challenge`); otherwise `tokens` is your
      *  session. A 403 `EmailNotVerified` means the email step isn't done. */
     login(input: LoginInput): Promise<LoginResult> {
-        return this.transport.json<LoginResult>(`${AUTH_BASE}/login`, {
-            email: input.email,
-            password: input.password,
-        })
+        return this.transport.json<LoginResult>(
+            `${AUTH_BASE}/login`,
+            { email: input.email, password: input.password },
+            { request: input.request }
+        )
     }
 
     /** Validate the current credential (API key or device token) and report the
@@ -147,11 +161,11 @@ export class AuthApi {
     /** Resolve the signed-in user from their access token, or `{ user: null }`.
      *  This is a network round-trip; for a per-navigation guard prefer
      *  `getSession`, which can answer offline and caches verified results. */
-    me(input: { accessToken: string; timeoutMs?: number }): Promise<MeResult> {
+    me(input: { accessToken: string; timeoutMs?: number } & ForVisitor): Promise<MeResult> {
         return this.transport.json<MeResult>(
             `${AUTH_BASE}/me`,
             {},
-            { accessToken: input.accessToken, timeoutMs: input.timeoutMs }
+            { accessToken: input.accessToken, timeoutMs: input.timeoutMs, request: input.request }
         )
     }
 
@@ -179,11 +193,15 @@ export class AuthApi {
      *  session when no cookie is present. */
     sessionFromCookies(
         cookieHeader: string | null | undefined,
-        options: { mode?: GetSessionInput['mode']; cookieName?: string } = {}
+        options: { mode?: GetSessionInput['mode']; cookieName?: string } & ForVisitor = {}
     ): Promise<SessionResult> {
         const token = readSessionToken(cookieHeader, options.cookieName)
         if (!token) return Promise.resolve({ status: 'anonymous', user: null, verified: false })
-        return this.sessions.getSession({ accessToken: token, mode: options.mode })
+        return this.sessions.getSession({
+            accessToken: token,
+            mode: options.mode,
+            request: options.request,
+        })
     }
 
     /** Decode an access token's claims locally without a network call or any
@@ -194,24 +212,27 @@ export class AuthApi {
 
     /** Confirm the 6-digit code emailed at signup. */
     verifyEmail(input: VerifyEmailInput): Promise<SimpleResult> {
-        return this.transport.json<SimpleResult>(`${AUTH_BASE}/verify-email`, {
-            code: input.code,
-            email: input.email,
-        })
+        return this.transport.json<SimpleResult>(
+            `${AUTH_BASE}/verify-email`,
+            { code: input.code, email: input.email },
+            { request: input.request }
+        )
     }
 
     forgotPassword(input: ForgotPasswordInput): Promise<SimpleResult> {
-        return this.transport.json<SimpleResult>(`${AUTH_BASE}/forgot-password`, {
-            email: input.email,
-        })
+        return this.transport.json<SimpleResult>(
+            `${AUTH_BASE}/forgot-password`,
+            { email: input.email },
+            { request: input.request }
+        )
     }
 
     resetPassword(input: ResetPasswordInput): Promise<SimpleResult> {
-        return this.transport.json<SimpleResult>(`${AUTH_BASE}/reset-password`, {
-            code: input.code,
-            password: input.password,
-            email: input.email,
-        })
+        return this.transport.json<SimpleResult>(
+            `${AUTH_BASE}/reset-password`,
+            { code: input.code, password: input.password, email: input.email },
+            { request: input.request }
+        )
     }
 
     /**
@@ -219,11 +240,13 @@ export class AuthApi {
      * 6-digit code. The address is the account's own; nothing in the call
      * chooses it. Three requests an hour per account.
      */
-    requestAccountDeletion(input: { accessToken: string }): Promise<AccountDeletionRequestResult> {
+    requestAccountDeletion(
+        input: { accessToken: string } & ForVisitor
+    ): Promise<AccountDeletionRequestResult> {
         return this.transport.json<AccountDeletionRequestResult>(
             `${AUTH_BASE}/account/delete/request`,
             {},
-            { accessToken: input.accessToken }
+            { accessToken: input.accessToken, request: input.request }
         )
     }
 
@@ -237,7 +260,7 @@ export class AuthApi {
         return this.transport.json<SimpleResult>(
             `${AUTH_BASE}/account/delete`,
             { code: input.code },
-            { accessToken: input.accessToken }
+            { accessToken: input.accessToken, request: input.request }
         )
     }
 }
