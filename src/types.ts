@@ -108,8 +108,8 @@ export interface LoginResult {
 
 export interface VerifyEmailInput extends ForVisitor {
     code: string
-    /** Accepted but ignored; the code alone resolves the user. */
-    email?: string
+    /** The account being verified: its code is the only one that counts. */
+    email: string
 }
 
 export interface ForgotPasswordInput extends ForVisitor {

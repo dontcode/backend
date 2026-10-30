@@ -168,7 +168,7 @@ Leave it out and the call still works; the per-address limit is skipped for it.
 //   • MFA: login may be two steps
 const signup = await client.auth.signup({ email, password })
 if (signup.verification_required) {
-    await client.auth.verifyEmail({ code }) // 6-digit code from the email
+    await client.auth.verifyEmail({ email, code }) // 6-digit code from the email
 }
 
 const login = await client.auth.login({ email, password })

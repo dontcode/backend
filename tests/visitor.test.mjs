@@ -250,7 +250,7 @@ describe('every call made for a visitor names them', () => {
                 mode: 'verified',
                 request,
             }),
-        verifyEmail: (c) => c.auth.verifyEmail({ code: '123456', request }),
+        verifyEmail: (c) => c.auth.verifyEmail({ email: 'a@b.co', code: '123456', request }),
         forgotPassword: (c) => c.auth.forgotPassword({ email: 'a@b.co', request }),
         resetPassword: (c) => c.auth.resetPassword({ code: '1', password: 'pw', request }),
         requestAccountDeletion: (c) => c.auth.requestAccountDeletion({ accessToken, request }),

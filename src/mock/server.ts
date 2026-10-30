@@ -569,6 +569,17 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
             }
 
             case 'verify-email':
+                // Same status and words as the live auth service.
+                if (!body.code || typeof body.email !== 'string' || !body.email.trim()) {
+                    sendJson(res, 400, {
+                        success: false,
+                        error: 'Email and verification code are required',
+                    })
+                    return
+                }
+                sendJson(res, 200, { success: true })
+                return
+
             case 'forgot-password':
             case 'reset-password':
                 sendJson(res, 200, { success: true })

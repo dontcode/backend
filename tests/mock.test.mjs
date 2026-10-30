@@ -161,6 +161,18 @@ describe('mock gateway — auth', () => {
         )
     })
 
+    it('verifies an email only for the account it names', async () => {
+        assert.deepEqual(await client.auth.verifyEmail({ email: 'a@b.co', code: '123456' }), {
+            success: true,
+        })
+        for (const email of [undefined, '  ']) {
+            await assert.rejects(
+                () => client.auth.verifyEmail({ email, code: '123456' }),
+                (err) => isDontCodeError(err) && err.status === 400
+            )
+        }
+    })
+
     it('rejects a wrong password with 401', async () => {
         await assert.rejects(
             () => client.auth.login({ email: 'a@b.com', password: 'nope' }),
