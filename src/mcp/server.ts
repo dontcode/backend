@@ -16,6 +16,9 @@ import {
     saveCredential,
 } from '../credentials'
 import { isDontCodeError } from '../errors'
+import { migrateFiles } from './migrate-files'
+import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
 /**
  * DontCode Backend MCP server (stdio).
@@ -297,11 +300,27 @@ export function createMcpServer(): McpServer {
         {
             title: 'Run a schema migration',
             description:
-                'Apply DDL (CREATE/ALTER/DROP TABLE, indexes, etc.) to the project database. Destructive and schema-shaping: confirm with the user, and note it needs an admin/owner role on device-token sessions.',
-            inputSchema: { sql: z.string() },
+                'Apply DDL (CREATE/ALTER/DROP TABLE, indexes, etc.) and data statements to the project database. Pass `sql` for one migration, or `files` (paths relative to the working directory) to apply migration files one by one in the order given, stopping at the first that fails; each file is one migration, at most 200,000 characters. On an Insight Project a migration may only add (no drop, rename, type change or new required column) so earlier versions of the app keep working. Destructive and schema-shaping: confirm with the user, and note it needs an admin/owner role on device-token sessions.',
+            inputSchema: {
+                sql: z.string().optional(),
+                files: z.array(z.string()).min(1).optional(),
+            },
             annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
         },
-        async ({ sql }) => run(async () => requireClient().db.migrate({ sql }))
+        async ({ sql, files }) => {
+            if ((sql === undefined) === (files === undefined)) {
+                return failure('Pass either `sql` or `files`, not both and not neither.')
+            }
+            if (sql !== undefined) return run(async () => requireClient().db.migrate({ sql }))
+            return run(async () => {
+                const client = requireClient()
+                return migrateFiles(files ?? [], {
+                    read: (file) => readFile(resolve(process.cwd(), file), 'utf8'),
+                    migrate: (body) => client.db.migrate({ sql: body }),
+                    describe: describeError,
+                })
+            })
+        }
     )
 
     // --- Storage -----------------------------------------------------------

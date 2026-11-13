@@ -26,3 +26,9 @@ export {
 } from './credentials'
 
 export { createMcpServer, startMcpServer } from './mcp/server'
+export {
+    migrateFiles,
+    type MigrateFilesDeps,
+    type MigrateFilesResult,
+    type MigratedFile,
+} from './mcp/migrate-files'
