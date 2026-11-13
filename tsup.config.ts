@@ -1,6 +1,11 @@
+import { readFileSync } from 'node:fs'
 import { defineConfig } from 'tsup'
 
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+
 export default defineConfig({
+    // The MCP server reports the release it ships in (src/mcp/server.ts).
+    define: { __DONTCODE_VERSION__: JSON.stringify(version) },
     entry: {
         index: 'src/index.ts',
         node: 'src/node.ts',

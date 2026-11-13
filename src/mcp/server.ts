@@ -31,7 +31,10 @@ import { z } from 'zod'
  */
 
 const SERVER_NAME = 'dontcode-backend'
-const SERVER_VERSION = '0.3.0'
+/** The package's own version, written in at build time (tsup.config.ts), so
+ *  the version an AI tool sees is the release it is running. */
+declare const __DONTCODE_VERSION__: string
+const SERVER_VERSION = __DONTCODE_VERSION__
 
 function baseUrl(): string {
     return (process.env.DONTCODE_API_URL || 'https://backend.dontcode.co').replace(/\/+$/, '')
