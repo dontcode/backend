@@ -19,4 +19,9 @@ export default defineConfig({
     clean: true,
     // Loaded lazily at runtime and shipped as an optional dependency; never bundle it.
     external: ['@electric-sql/pglite'],
+    // Only the MCP server uses these, so they are bundled into it (dist/cli and
+    // dist/mcp) and kept out of `dependencies`: an app that installs `dontcode`
+    // for its client never installs the MCP SDK's HTTP stack (express, hono,
+    // cors, …), and `npx -y dontcode mcp` still runs as it did.
+    noExternal: ['@modelcontextprotocol/sdk', 'zod'],
 })
