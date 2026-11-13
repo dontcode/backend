@@ -1,4 +1,4 @@
-import type { RateLimitStatus } from './rate-limit'
+import { isQuotaRefusal, type RateLimitStatus } from './rate-limit'
 
 /**
  * Every non-2xx response from the gateway surfaces as a DontCodeError. The
@@ -26,6 +26,9 @@ export interface DontCodeErrorBody {
     timeleft?: number
     /** Which budget was exhausted, on rate-limit refusals. */
     scope?: string
+    /** The period of a plan's email limit that ran out (`daily` or
+     *  `monthly`), on an email send refused for the plan's quota. */
+    limit_kind?: string
     /** A corrected email address on a sign-up refusal
      *  (`UndeliverableEmailException`, `EmailTypoSuspected`). */
     did_you_mean?: string
@@ -63,14 +66,29 @@ export class DontCodeError extends Error {
      * Checks the body's `rate_limit` flag as well as the status: a 429 is the
      * common shape, but not the only one a refusal can arrive in, and treating
      * status alone as the test silently misreads the others as ordinary errors.
+     * A used-up plan quota is a 429 as well, and is not a rate limit: see
+     * `quotaExceeded`.
      */
     get rateLimited(): boolean {
-        return this.status === 429 || this.body.rate_limit === true
+        return !this.quotaExceeded && (this.status === 429 || this.body.rate_limit === true)
+    }
+
+    /**
+     * True when the project's plan quota for the period is used up: the
+     * month's database reads or writes (`DB_QUOTA_EXCEEDED`), or the day's or
+     * month's emails. Unlike a rate limit, waiting and retrying is refused the
+     * same way until the period turns over or the owner moves to a bigger
+     * plan, so do not retry it; `retryAfter` is `undefined`.
+     */
+    get quotaExceeded(): boolean {
+        return isQuotaRefusal(this.status, this.body)
     }
 
     /** Seconds to wait before retrying, when the responder said. `undefined`
-     *  means it didn't, not that retrying immediately is fine. */
+     *  means it didn't, not that retrying immediately is fine. Never set on a
+     *  used-up quota, which no wait clears. */
     get retryAfter(): number | undefined {
+        if (this.quotaExceeded) return undefined
         if (this.rateLimit?.retryAfter !== undefined) return this.rateLimit.retryAfter
         const timeleft = this.body.timeleft
         return typeof timeleft === 'number' && Number.isFinite(timeleft) ? timeleft : undefined

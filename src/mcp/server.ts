@@ -1,6 +1,3 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { z } from 'zod'
 import {
     detectRepoName,
     login as runLogin,
@@ -10,15 +7,14 @@ import {
     type DeviceStartResponse,
 } from '../auth-device'
 import { dontcode, type DontCodeClient } from '../client'
-import {
-    clearCredential,
-    resolveActiveToken,
-    saveCredential,
-} from '../credentials'
+import { clearCredential, resolveActiveToken, saveCredential } from '../credentials'
 import { isDontCodeError } from '../errors'
 import { migrateFiles } from './migrate-files'
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
+import { z } from 'zod'
 
 /**
  * DontCode Backend MCP server (stdio).
@@ -61,6 +57,9 @@ function describeError(err: unknown): string {
         }
         if (err.status === 403) {
             return `Your project role does not allow that. (${err.message})`
+        }
+        if (err.quotaExceeded) {
+            return `${err.message} This is the plan's quota for the period, not a rate limit: do not retry, it is refused the same way until the period starts over or the project's owner moves to a bigger plan. Tell the user.`
         }
         if (err.rateLimited) {
             const wait = err.retryAfter
@@ -123,7 +122,9 @@ export function createMcpServer(): McpServer {
                 client_name: z
                     .string()
                     .optional()
-                    .describe('Label shown to the user on the approval screen, e.g. "Claude Code".'),
+                    .describe(
+                        'Label shown to the user on the approval screen, e.g. "Claude Code".'
+                    ),
             },
             annotations: { readOnlyHint: false, openWorldHint: true },
         },
@@ -400,7 +401,8 @@ export function createMcpServer(): McpServer {
             inputSchema: { bucket: bucketArg, paths: z.array(z.string()).min(1) },
             annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
         },
-        async ({ bucket, paths }) => run(async () => bucketOf(requireClient(), bucket).remove(paths))
+        async ({ bucket, paths }) =>
+            run(async () => bucketOf(requireClient(), bucket).remove(paths))
     )
 
     tool(

@@ -381,6 +381,7 @@ try {
         err.didYouMean // a corrected email address on a signup refusal, when offered
         err.rateLimited // true when a rate limit refused the call
         err.retryAfter // seconds to wait, when the responder said
+        err.quotaExceeded // true when the plan's quota for the period is used up: do not retry
         err.body // the full error envelope
     }
 }
@@ -434,6 +435,28 @@ On a refusal, `err.rateLimited` is `true`, `err.retryAfter` is the wait in secon
 `err.scope` names the budget that ran out. `rateLimited` checks the response body as well as
 the status, so a refusal that arrives as something other than a `429` is still recognised as
 one.
+
+### Plan quotas
+
+A plan also caps each period: a month's database reads and writes, and a day's and a month's
+emails. Once one is used up, those calls are refused with a `429` too, but a quota is not a rate
+limit: waiting a few seconds does not clear it, only the period starting over or the owner moving
+to a bigger plan does. The SDK tells them apart, so `err.quotaExceeded` is `true`,
+`err.rateLimited` is `false` and `err.retryAfter` is `undefined`; the per-minute budget the
+response still reports is not marked `exceeded`. Database reads and writes run out separately
+(`err.code` is `DB_QUOTA_EXCEEDED`, and `err.message` says which), so the other kind keeps
+working. Show the message to the owner rather than retrying:
+
+```ts
+try {
+    await client.db.orders.insert({ total })
+} catch (err) {
+    if (isDontCodeError(err) && err.quotaExceeded) {
+        return showOwner(err.message) // "This project has used this month's database writes on its plan."
+    }
+    throw err
+}
+```
 
 ### Payment errors
 

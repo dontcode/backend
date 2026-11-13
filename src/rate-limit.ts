@@ -57,6 +57,31 @@ export interface RateLimitView {
 export interface RateLimitHints {
     rate_limit?: unknown
     timeleft?: unknown
+    code?: unknown
+    limit_kind?: unknown
+}
+
+/** Codes the platform sends when a plan's quota for its period is used up. */
+const QUOTA_CODES: ReadonlySet<string> = new Set(['DB_QUOTA_EXCEEDED'])
+
+/** The periods of a plan's email limits, as notifications-service names them. */
+const QUOTA_PERIODS: ReadonlySet<string> = new Set(['daily', 'monthly'])
+
+/**
+ * True when a refusal is a plan's quota used up for its period, not a
+ * per-minute budget. Both arrive as 429s, but they are different things: a
+ * rate limit clears in seconds, a quota holds until the period turns over or
+ * the owner moves to a bigger plan, so waiting and retrying never helps it.
+ *
+ * The platform sends two shapes today: the gateway's database quota
+ * (`code: 'DB_QUOTA_EXCEEDED'`, the month's reads or writes) and the email
+ * service's plan limits (`limit_kind: 'daily' | 'monthly'`, passed through
+ * the gateway verbatim).
+ */
+export function isQuotaRefusal(status: number, hints?: RateLimitHints): boolean {
+    if (status < 400 || !hints) return false
+    if (typeof hints.code === 'string' && QUOTA_CODES.has(hints.code)) return true
+    return typeof hints.limit_kind === 'string' && QUOTA_PERIODS.has(hints.limit_kind)
 }
 
 /**
@@ -132,7 +157,10 @@ export function readRateLimit(
     const reset = num(read('RateLimit-Reset'))
     const policy = read('RateLimit-Policy') || undefined
     const retryAfterHeader = num(read('Retry-After'))
-    const exceeded = status === 429 || hints?.rate_limit === true
+    // A used-up quota is a 429 too, but it is not this budget's refusal: the
+    // headers on it still describe the per-minute window, which has room.
+    const exceeded =
+        !isQuotaRefusal(status, hints) && (status === 429 || hints?.rate_limit === true)
 
     const counted =
         limit !== undefined ||
