@@ -31,6 +31,7 @@ export type {
 export {
     DEFAULT_OAUTH_STATE_COOKIE_NAME,
     DEFAULT_SESSION_COOKIE_NAME,
+    OAUTH_CALLBACK_PATH,
     clearOAuthStateCookie,
     clearSessionCookie,
     oauthStateMatches,
@@ -39,6 +40,6 @@ export {
     serializeOAuthStateCookie,
     serializeSessionCookie,
 } from './cookies'
-export type { OAuthStateCookieOptions, SessionCookieOptions } from './cookies'
+export type { OAuthStateCookie, OAuthStateCookieOptions, SessionCookieOptions } from './cookies'
 
 export type * from './types'

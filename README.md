@@ -269,40 +269,46 @@ await client.auth.signup({ email, password, promotionsOptIn: ticked, request })
 ### Social sign-in
 
 Kakao, Google, GitHub and Apple, with the provider apps the owner set up under Users >
-Sign-in settings; their client secrets stay with DontCode. Register your callback URL (say
-`https://yourapp.com/auth/callback/kakao`) as a redirect URL in that provider app.
+Sign-in settings; their client secrets stay with DontCode. One callback route serves every
+provider: `/api/auth/oauth/callback` on your app's address (`OAUTH_CALLBACK_PATH`), the URL
+those settings show the owner to register with each provider.
 
 ```ts
-import { oauthStateMatches, readOAuthStateCookie, serializeOAuthStateCookie } from 'dontcode'
+import {
+    OAUTH_CALLBACK_PATH,
+    clearOAuthStateCookie,
+    oauthStateMatches,
+    readOAuthStateCookie,
+    serializeOAuthStateCookie,
+} from 'dontcode'
+
+const redirectUri = `https://yourapp.com${OAUTH_CALLBACK_PATH}`
 
 // The buttons
 const providers = await client.auth.oauth.providers() // [{ name: 'kakao', clientId }]
 
-// GET /auth/start/kakao: send the visitor to the provider
-const redirectUri = 'https://yourapp.com/auth/callback/kakao'
-const { url, state, formPost } = await client.auth.oauth.authorizeUrl({
-    provider: 'kakao',
-    redirectUri,
-})
-headers.append('Set-Cookie', serializeOAuthStateCookie(state, { formPost }))
+// GET /auth/start?provider=kakao: send the visitor to the provider
+const { url, state, formPost } = await client.auth.oauth.authorizeUrl({ provider, redirectUri })
+headers.append('Set-Cookie', serializeOAuthStateCookie({ provider, state }, { formPost }))
 // → 302 to url
 
-// GET (Apple: POST) /auth/callback/kakao?code=…&state=…
-if (!oauthStateMatches(params.state, readOAuthStateCookie(req.headers.get('cookie')))) {
+// GET /api/auth/oauth/callback?code=…&state=… (Apple: a form POST with code, state and user)
+const kept = readOAuthStateCookie(req.headers.get('cookie'))
+if (!kept || !oauthStateMatches(params.state, kept.state)) {
     // refuse: the sign-in did not start here
 }
+headers.append('Set-Cookie', clearOAuthStateCookie({ formPost: kept.provider === 'apple' }))
 const result = await client.auth.oauth.callback({
-    provider: 'kakao',
+    provider: kept.provider,
     code: params.code,
     redirectUri,
+    appleUser: params.user, // Apple's first sign-in only
     request,
 })
 // result is login's answer: result.tokens, or result.mfa_required with a challenge_token
 ```
 
-Apple answers with a form POST, so read `code`, `state` and `user` from the form body and
-pass `user` as `appleUser` on a first sign-in. The mock gateway has no provider apps:
-`providers()` is empty offline.
+The mock gateway has no provider apps: `providers()` is empty offline.
 
 ## Database
 

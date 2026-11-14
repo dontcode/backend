@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { afterEach, beforeEach, describe, it } from 'node:test'
 
 import {
+    OAUTH_CALLBACK_PATH,
     clearOAuthStateCookie,
     dontcode,
     isDontCodeError,
@@ -206,7 +207,7 @@ describe('social sign-in', () => {
 
         const { url, state, formPost } = await client().auth.oauth.authorizeUrl({
             provider: 'kakao',
-            redirectUri: 'https://shop.example/auth/callback/kakao',
+            redirectUri: 'https://shop.example/api/auth/oauth/callback',
         })
 
         const parsed = new URL(url)
@@ -214,7 +215,7 @@ describe('social sign-in', () => {
         assert.equal(parsed.searchParams.get('client_id'), 'kakao-public')
         assert.equal(
             parsed.searchParams.get('redirect_uri'),
-            'https://shop.example/auth/callback/kakao'
+            'https://shop.example/api/auth/oauth/callback'
         )
         assert.equal(parsed.searchParams.get('response_type'), 'code')
         assert.equal(parsed.searchParams.get('scope'), 'profile_nickname account_email')
@@ -228,7 +229,7 @@ describe('social sign-in', () => {
 
         const { url, formPost } = await client().auth.oauth.authorizeUrl({
             provider: 'apple',
-            redirectUri: 'https://shop.example/auth/callback/apple',
+            redirectUri: 'https://shop.example/api/auth/oauth/callback',
             state: 'mine',
         })
 
@@ -275,7 +276,7 @@ describe('social sign-in', () => {
         const result = await client().auth.oauth.callback({
             provider: 'apple',
             code: 'c0de',
-            redirectUri: 'https://shop.example/auth/callback/apple',
+            redirectUri: 'https://shop.example/api/auth/oauth/callback',
             role: 'buyer',
             appleUser: '{"name":{"firstName":"Ji"}}',
         })
@@ -284,7 +285,7 @@ describe('social sign-in', () => {
         assert.deepEqual(bodyOf(last()), {
             provider: 'apple',
             code: 'c0de',
-            redirect_uri: 'https://shop.example/auth/callback/apple',
+            redirect_uri: 'https://shop.example/api/auth/oauth/callback',
             role: 'buyer',
             user: '{"name":{"firstName":"Ji"}}',
         })
@@ -294,9 +295,9 @@ describe('social sign-in', () => {
 })
 
 describe('social sign-in: the state cookie', () => {
-    it('keeps the state httpOnly for ten minutes, SameSite=Lax', () => {
-        const cookie = serializeOAuthStateCookie('abc')
-        assert.match(cookie, /^dc_oauth_state=abc; /)
+    it('keeps the provider and the state httpOnly for ten minutes, SameSite=Lax', () => {
+        const cookie = serializeOAuthStateCookie({ provider: 'kakao', state: 'abc' })
+        assert.match(cookie, /^dc_oauth_state=kakao\.abc; /)
         assert.match(cookie, /Max-Age=600/)
         assert.match(cookie, /SameSite=Lax/)
         assert.match(cookie, /HttpOnly/)
@@ -304,13 +305,25 @@ describe('social sign-in: the state cookie', () => {
     })
 
     it("lets Apple's cross-site form POST carry it back (SameSite=None; Secure)", () => {
-        const cookie = serializeOAuthStateCookie('abc', { formPost: true })
+        const cookie = serializeOAuthStateCookie(
+            { provider: 'apple', state: 'abc' },
+            { formPost: true }
+        )
         assert.match(cookie, /SameSite=None/)
         assert.match(cookie, /Secure/)
     })
 
-    it('reads it back, clears it, and compares it', () => {
-        assert.equal(readOAuthStateCookie('a=1; dc_oauth_state=xyz; b=2'), 'xyz')
+    it('reads the provider and state back, so one callback serves every provider', () => {
+        assert.deepEqual(readOAuthStateCookie('a=1; dc_oauth_state=google.xyz_-9; b=2'), {
+            provider: 'google',
+            state: 'xyz_-9',
+        })
+        assert.equal(readOAuthStateCookie('dc_oauth_state=nodot'), null)
+        assert.equal(readOAuthStateCookie('other=1'), null)
+        assert.equal(OAUTH_CALLBACK_PATH, '/api/auth/oauth/callback')
+    })
+
+    it('clears it, and compares states in full', () => {
         assert.match(clearOAuthStateCookie(), /Max-Age=0/)
         assert.equal(oauthStateMatches('xyz', 'xyz'), true)
         assert.equal(oauthStateMatches('xyz', 'xyw'), false)

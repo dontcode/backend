@@ -92,6 +92,13 @@ export function readSessionToken(
 /** Default cookie name for a social sign-in's state. */
 export const DEFAULT_OAUTH_STATE_COOKIE_NAME = 'dc_oauth_state'
 
+/**
+ * The callback path the project's Sign-in settings show the owner to register
+ * with each provider, the one Insight apps use: one route for every provider,
+ * which reads the provider back from the state cookie.
+ */
+export const OAUTH_CALLBACK_PATH = '/api/auth/oauth/callback'
+
 /** Ten minutes: long enough to sign in at the provider, short enough to go stale. */
 const OAUTH_STATE_MAX_AGE_SECONDS = 600
 
@@ -106,14 +113,23 @@ export interface OAuthStateCookieOptions {
     formPost?: boolean
 }
 
-/** Build a `Set-Cookie` value that keeps a social sign-in's state for ten minutes. */
+/** What the state cookie keeps: the state, and which provider the visitor went to. */
+export interface OAuthStateCookie {
+    state: string
+    provider: string
+}
+
+/**
+ * Build a `Set-Cookie` value that keeps a social sign-in's state and provider
+ * for ten minutes, so one callback route serves every provider.
+ */
 export function serializeOAuthStateCookie(
-    state: string,
+    kept: OAuthStateCookie,
     options: OAuthStateCookieOptions = {}
 ): string {
     return serialize(
         options.name ?? DEFAULT_OAUTH_STATE_COOKIE_NAME,
-        state,
+        `${kept.provider}.${kept.state}`,
         {
             path: options.path,
             domain: options.domain,
@@ -134,12 +150,16 @@ export function clearOAuthStateCookie(options: OAuthStateCookieOptions = {}): st
     )
 }
 
-/** Read a social sign-in's state out of a `Cookie` request header, or `null`. */
+/** Read a social sign-in's state and provider out of a `Cookie` request header, or `null`. */
 export function readOAuthStateCookie(
     cookieHeader: string | null | undefined,
     name: string = DEFAULT_OAUTH_STATE_COOKIE_NAME
-): string | null {
-    return readSessionToken(cookieHeader, name)
+): OAuthStateCookie | null {
+    const value = readSessionToken(cookieHeader, name)
+    if (!value) return null
+    const dot = value.indexOf('.')
+    if (dot <= 0 || dot === value.length - 1) return null
+    return { provider: value.slice(0, dot), state: value.slice(dot + 1) }
 }
 
 /**
