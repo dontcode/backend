@@ -62,6 +62,13 @@ interface PaymentRecord {
     status: 'paid' | 'refunded' | 'partially_refunded'
     refundedAmount: number
     paidAt: string
+    /** The buyer's receipt: its number, and the token their link carries. */
+    receiptNumber?: string
+    receiptToken?: string
+    description?: string
+    customerName?: string | null
+    customerEmail?: string | null
+    locale?: 'en' | 'ko' | 'zh' | 'ja'
 }
 
 /** The full mock payments state, for optional disk persistence. */
@@ -209,6 +216,45 @@ export function createMockPayments(opts?: {
             status: r.status === 'paid' ? 'paid' : 'refunded',
             paidAt: r.paidAt,
             currency: r.currency,
+            receiptNumber: r.receiptNumber ?? null,
+            receiptUrl: r.receiptNumber ? `/r/${r.receiptNumber}?t=${r.receiptToken}` : null,
+        }
+    }
+
+    /** Twelve digits in three groups, as the platform numbers receipts. */
+    function receiptNumber(): string {
+        const digits = Array.from({ length: 12 }, () => Math.floor(Math.random() * 10)).join('')
+        return `${digits.slice(0, 4)}-${digits.slice(4, 8)}-${digits.slice(8)}`
+    }
+
+    /** The receipt page's data for a payment, as the live service answers it (ClientReceiptView). */
+    function receiptView(r: PaymentRecord) {
+        return {
+            number: r.receiptNumber,
+            kind: 'one_time',
+            status: r.status === 'paid' ? 'paid' : 'refunded',
+            currency: r.currency,
+            amount: r.amount,
+            paidAt: r.paidAt,
+            refundedAt: null,
+            paymentMethod: r.method,
+            paymentDetail: null,
+            lineItems: [{ name: r.description || 'Payment', amount: r.amount, quantity: 1 }],
+            issuer: {
+                appName: 'Mock app',
+                businessName: null,
+                registrationNumber: null,
+                representative: null,
+                address: null,
+                phone: null,
+                mailOrderNumber: null,
+                email: 'owner@example.com',
+                logoUrl: null,
+                color: null,
+                footer: null,
+            },
+            customer: { name: r.customerName ?? null, email: r.customerEmail ?? null },
+            locale: r.locale ?? 'en',
         }
     }
 
@@ -253,6 +299,15 @@ export function createMockPayments(opts?: {
         // op = everything after `/api/v1/payments`, e.g. `verify`, `admin/grant-subscription`.
         const op = url.pathname.slice('/api/v1/payments'.length).replace(/^\/+/, '')
         const body = parseJson(raw)
+
+        // The buyer's receipt by number and token (the link in their receipt email).
+        if (method === 'GET' && op.startsWith('receipts/')) {
+            const number = op.slice('receipts/'.length)
+            const token = url.searchParams.get('t') ?? ''
+            const record = [...payments.values()].find((p) => p.receiptNumber === number)
+            if (!record || !token || record.receiptToken !== token) return notFound()
+            return ok(receiptView(record))
+        }
 
         switch (`${method} ${op}`) {
             // ── one-time payments ──────────────────────────────────────────
@@ -299,6 +354,16 @@ export function createMockPayments(opts?: {
                     status: 'paid',
                     refundedAmount: 0,
                     paidAt: now(),
+                    receiptNumber: receiptNumber(),
+                    receiptToken: randomUUID().replace(/-/g, ''),
+                    description:
+                        typeof body.description === 'string' ? body.description : undefined,
+                    customerName: typeof body.customerName === 'string' ? body.customerName : null,
+                    customerEmail:
+                        typeof body.customerEmail === 'string' ? body.customerEmail : null,
+                    locale: ['en', 'ko', 'zh', 'ja'].includes(String(body.locale))
+                        ? (body.locale as PaymentRecord['locale'])
+                        : undefined,
                 }
                 payments.set(paymentId, record)
                 persist()

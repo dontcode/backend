@@ -567,6 +567,20 @@ if (receipt.status === 'paid') deliver()
   that page's server, and treat a `code` as a cancelled payment.
 - **Test payments:** `receipt.test` is true when one of the owner's test channels took it:
   nothing was charged.
+- **The buyer's receipt page:** every completed payment's receipt email links to
+  `/r/<number>?t=<token>` on your app's primary domain (`receipt.receiptUrl`). Mount the page
+  there, and it draws the receipt with the owner's business and branding, printable, in the
+  receipt's language; until you do, those links 404.
+
+    ```ts
+    // Next: src/app/r/[number]/route.ts
+    export const GET = (request: Request) => client.payments.handleReceiptRequest(request)
+    // Hono: app.get('/r/:number', (c) => client.payments.handleReceiptRequest(c.req.raw))
+    ```
+
+    It takes a Fetch `Request`; read one receipt's data yourself with
+    `client.payments.receipt(number, token)`.
+
 - `locale` (`'ko'`, `'en'`, `'zh'`, `'ja'`) on `requestPayment`, `verify` and `pay` sets the
   window's and the receipt email's language.
 

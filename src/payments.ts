@@ -1,8 +1,20 @@
-import { DontCodeError } from './errors'
+import { DontCodeError, isDontCodeError } from './errors'
 import { Transport } from './http'
+import {
+    RECEIPT_NUMBER_PATTERN,
+    RECEIPT_TOKEN_PATTERN,
+    RECEIPT_WORDS,
+    htmlResponse,
+    isReceiptView,
+    messagePage,
+    receiptNonce,
+    renderReceiptPage,
+    requestLang,
+} from './receipt-page'
 import type {
     BillingPlan,
     CheckoutMethods,
+    ClientReceiptView,
     Feature,
     FeatureInput,
     PaymentReceipt,
@@ -21,6 +33,7 @@ import type {
     UserFeature,
     VerifyPaymentInput,
 } from './types'
+import type { ForVisitor } from './visitor'
 
 const PAYMENTS_PATH = '/api/v1/payments'
 
@@ -92,6 +105,76 @@ export class PaymentsApi {
             params
         )
         return r.receipt
+    }
+
+    /**
+     * One buyer's receipt by its number and token, the pair in the link of
+     * their receipt email. Null when there is no such receipt for that token.
+     * Pass the request you are answering so the read limit counts that buyer.
+     */
+    async receipt(
+        number: string,
+        token: string,
+        options: ForVisitor = {}
+    ): Promise<ClientReceiptView | null> {
+        if (!RECEIPT_NUMBER_PATTERN.test(number) || !RECEIPT_TOKEN_PATTERN.test(token)) return null
+        try {
+            return await this.transport.get<ClientReceiptView>(
+                `${PAYMENTS_PATH}/receipts/${enc(number)}?t=${enc(token)}`,
+                { request: options.request }
+            )
+        } catch (err) {
+            if (isDontCodeError(err) && err.status === 404) return null
+            throw err
+        }
+    }
+
+    /**
+     * The buyer's receipt page. Every receipt email links to
+     * `/r/<number>?t=<token>` on your app's primary domain: mount this there
+     * (a Next route handler `src/app/r/[number]/route.ts`:
+     * `export const GET = (req: Request) => client.payments.handleReceiptRequest(req)`).
+     * It answers one printable HTML page in the receipt's language, a 404 page
+     * for a wrong number or token, or a page saying it cannot be shown right
+     * now. The number is the URL's last segment unless you pass it.
+     */
+    async handleReceiptRequest(request: Request, number?: string): Promise<Response> {
+        const nonce = receiptNonce()
+        const url = new URL(request.url)
+        let wanted = number
+        if (wanted === undefined) {
+            try {
+                wanted = decodeURIComponent(url.pathname.split('/').filter(Boolean).pop() ?? '')
+            } catch {
+                wanted = ''
+            }
+        }
+        const token = url.searchParams.get('t') ?? ''
+        const lang = requestLang(request)
+        const words = RECEIPT_WORDS[lang]
+        const notFound = () =>
+            htmlResponse(
+                messagePage(lang, nonce, words.notFoundTitle, words.notFoundBody),
+                404,
+                nonce
+            )
+        const unavailable = (status: number) =>
+            htmlResponse(
+                messagePage(lang, nonce, words.unavailableTitle, words.unavailableBody),
+                status,
+                nonce
+            )
+
+        let view: ClientReceiptView | null
+        try {
+            view = await this.receipt(wanted, token, { request })
+        } catch (err) {
+            console.error('[dontcode] receipt read failed:', err)
+            return unavailable(isDontCodeError(err) && err.status === 503 ? 503 : 502)
+        }
+        if (!view) return notFound()
+        if (!isReceiptView(view)) return unavailable(502)
+        return htmlResponse(renderReceiptPage(view, nonce), 200, nonce)
     }
 
     /** Refund a payment, fully (omit `amount`) or partially. Idempotent. */

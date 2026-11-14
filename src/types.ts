@@ -513,6 +513,12 @@ export interface PaymentReceipt {
     test?: boolean
     /** The receipt's number, when one was issued (none for a test payment). */
     receiptNumber?: string | null
+    /**
+     * The buyer's receipt page, `/r/<number>?t=<token>` on your app's primary
+     * domain, also in their receipt email: serve it with
+     * `payments.handleReceiptRequest`. Missing for a test payment.
+     */
+    receiptUrl?: string | null
 }
 
 export interface RefundInput {
@@ -838,4 +844,41 @@ export interface AiAgentResponse {
         toolResults: AiToolResult[]
         usage: AiUsage
     }>
+}
+
+/**
+ * One buyer's receipt as the receipt page draws it (twin of @dontcode/payments'
+ * ClientReceiptView): read with `payments.receipt(number, token)`.
+ */
+export interface ClientReceiptView {
+    /** Twelve digits in three groups: 2292-7165-6932. */
+    number: string
+    kind: 'one_time' | 'subscription' | 'refund'
+    status: 'paid' | 'refunded'
+    currency: string
+    /** In the currency's smallest unit. */
+    amount: number
+    paidAt: string
+    refundedAt: string | null
+    /** The method's code ('card', 'kakaopay', ...), else the provider's own word. */
+    paymentMethod: string | null
+    /** Card brand and last four, when the provider reported them. */
+    paymentDetail: string | null
+    lineItems: { name: string; amount: number; quantity: number }[]
+    issuer: {
+        appName: string
+        businessName: string | null
+        registrationNumber: string | null
+        representative: string | null
+        address: string | null
+        phone: string | null
+        /** 통신판매업 신고번호. */
+        mailOrderNumber: string | null
+        email: string | null
+        logoUrl: string | null
+        color: string | null
+        footer: string | null
+    }
+    customer: { name: string | null; email: string | null }
+    locale: PaymentLanguage
 }
