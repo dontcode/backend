@@ -421,9 +421,14 @@ describe('mock gateway — payments', () => {
         assert.ok(reserved.subscriptionId)
         assert.equal(reserved.billingKeyMethod, 'EASY_PAY')
         assert.equal(
+            (await client.payments.getSubscriptionById(reserved.subscriptionId))?.status,
+            'incomplete',
+            'a reserved checkout is incomplete until it is paid'
+        )
+        assert.equal(
             await client.payments.hasActiveSubscription('u3'),
             false,
-            'trialing is not yet active'
+            'an incomplete checkout is not yet active'
         )
 
         const confirmed = await client.payments.confirmSubscription({

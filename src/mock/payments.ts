@@ -40,7 +40,7 @@ import { randomUUID } from 'node:crypto'
 
 /** Subscription statuses that count as "live" (exist + not cancelled). */
 const LIVE_STATUSES: ReadonlySet<SubscriptionStatus> = new Set([
-    'trialing',
+    'incomplete',
     'active',
     'past_due',
     'paused',
@@ -428,7 +428,7 @@ export function createMockPayments(opts?: {
                     userId: String(body.userId ?? ''),
                     planId: plan.id,
                     method,
-                    status: 'trialing',
+                    status: 'incomplete',
                     interval: plan.interval,
                 })
                 subscriptions.set(sub.id, sub)
@@ -454,7 +454,7 @@ export function createMockPayments(opts?: {
 
             case 'POST subscribe-abort': {
                 const sub = subscriptions.get(String(body.subscription_id ?? ''))
-                if (sub && sub.status === 'trialing' && !sub.billingKey) {
+                if (sub && sub.status === 'incomplete' && !sub.billingKey) {
                     subscriptions.delete(sub.id)
                     persist()
                 }

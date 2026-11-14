@@ -547,7 +547,7 @@ export interface RefundResult {
 
 export type BillingInterval = 'monthly' | 'yearly' | 'weekly'
 
-export type SubscriptionStatus = 'trialing' | 'active' | 'paused' | 'cancelled' | 'past_due'
+export type SubscriptionStatus = 'incomplete' | 'active' | 'paused' | 'cancelled' | 'past_due'
 
 /** The plan shape passed when starting a subscription. */
 export interface BillingPlan {
