@@ -579,7 +579,7 @@ gateway takes every method offline and never charges.
 
 ## AI
 
-The AI an Insight app's server has: chat, vision, image generation, speech and tool-using
+AI for your server, as an Insight app's server has it: chat, vision, image generation, speech and tool-using
 agents. Every call is charged to the project owner's DontCode credits; when they run out a
 call fails with a `402` DontCodeError, so tell the person the feature is unavailable rather
 than retrying. DontCode picks the model for the `intent` (`'quick'`, `'balanced'` (default)

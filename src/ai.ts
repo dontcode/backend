@@ -356,7 +356,7 @@ export class AiAgentApi {
 }
 
 /**
- * The AI an Insight app's server code has (@dontcode/ai): chat, vision, image
+ * AI for your server, as an Insight app's server has it (@dontcode/ai): chat, vision, image
  * generation, speech and tool-using agents, charged to the project owner's
  * DontCode credits. When they run out a call fails with a 402 DontCodeError:
  * tell the person the feature is unavailable rather than retrying. Server
