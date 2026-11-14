@@ -32,6 +32,22 @@ export interface WhereClause {
 
 export type OrderByClause = Record<string, 'asc' | 'desc'>
 
+/** What one related table brings: `true`, or its own filter, order, limit and includes. */
+export interface IncludeOptions {
+    where?: WhereClause
+    orderBy?: OrderByClause
+    /** Per parent row; at most 1,000. */
+    limit?: number
+    include?: IncludeClause
+}
+
+/**
+ * Related rows by your foreign keys: `{ author: true }` on posts is the row
+ * `posts.author_id` references (one row or null); `{ comments: true }` is every
+ * `comments` row whose foreign key references the post (a list). Five levels deep.
+ */
+export type IncludeClause = Record<string, boolean | IncludeOptions>
+
 /** Options accepted by read operations (`find`, `findFirst`, `count`). */
 export interface QueryOptions {
     where?: WhereClause
@@ -39,6 +55,8 @@ export interface QueryOptions {
     orderBy?: OrderByClause
     limit?: number
     offset?: number
+    /** Related rows on `find`, `findMany`, `findFirst` and `findOne`. */
+    include?: IncludeClause
 }
 
 export interface UpdateInput {

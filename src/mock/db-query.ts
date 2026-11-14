@@ -296,6 +296,293 @@ function rowCount(result: { rows: unknown[]; affectedRows?: number }): number {
     return result.affectedRows ?? result.rows.length
 }
 
+// ── include: related rows (@dontcode/db's include, src/server/include-resolver.ts) ──
+
+/** What one include key asks for: `true`, or the related rows' own filter and shape. */
+export interface IncludeOptions {
+    where?: WhereClause
+    orderBy?: OrderByClause
+    limit?: number
+    include?: IncludeClause
+}
+
+export type IncludeClause = Record<string, boolean | IncludeOptions>
+
+/** How deep includes may nest (posts → comments → author ...), as in @dontcode/db. */
+const MAX_INCLUDE_DEPTH = 5
+
+/** Operations that read rows, and so can bring their related rows along. */
+const INCLUDE_OPERATIONS: ReadonlySet<string> = new Set([
+    'find',
+    'findMany',
+    'findFirst',
+    'findOne',
+])
+
+/** A rank column no table of the caller's can collide with. */
+const RANK_COLUMN = '__dontcode_include_rank'
+
+interface ForeignKey {
+    sourceTable: string
+    sourceColumn: string
+    targetTable: string
+    targetColumn: string
+}
+
+interface Relation {
+    /** forward: this row's `<key>_id` names one row; reverse: a table named `<key>` points here. */
+    type: 'forward' | 'reverse'
+    sourceTable: string
+    sourceColumn: string
+    targetTable: string
+    targetColumn: string
+}
+
+/** A schema's foreign keys, read from the catalog. They change only with a migration. */
+const foreignKeyCache = new Map<string, { at: number; keys: readonly ForeignKey[] }>()
+const FOREIGN_KEY_TTL_MS = 5 * 60_000
+
+async function getForeignKeys(db: Queryable, schema: string): Promise<readonly ForeignKey[]> {
+    const cached = foreignKeyCache.get(schema)
+    if (cached && Date.now() - cached.at < FOREIGN_KEY_TTL_MS) return cached.keys
+
+    const result = await db.query(
+        `SELECT kcu.table_name AS source_table, kcu.column_name AS source_column,
+                ccu.table_name AS target_table, ccu.column_name AS target_column
+         FROM information_schema.table_constraints tc
+         JOIN information_schema.key_column_usage kcu
+           ON tc.constraint_name = kcu.constraint_name AND tc.table_schema = kcu.table_schema
+         JOIN information_schema.constraint_column_usage ccu
+           ON tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
+         WHERE tc.constraint_type = 'FOREIGN KEY' AND tc.table_schema = $1`,
+        [schema]
+    )
+    const keys = result.rows.map((row) => ({
+        sourceTable: String(row.source_table),
+        sourceColumn: String(row.source_column),
+        targetTable: String(row.target_table),
+        targetColumn: String(row.target_column),
+    }))
+    foreignKeyCache.set(schema, { at: Date.now(), keys })
+    return keys
+}
+
+/**
+ * The relation an include key names, by @dontcode/db's rule: `author` on posts
+ * is the row posts.author_id points at (forward, one row or null); `comments`
+ * on posts is every comments row whose foreign key points at the post
+ * (reverse, a list).
+ */
+function resolveRelation(table: string, key: string, keys: readonly ForeignKey[]): Relation {
+    const forward = keys.find((fk) => fk.sourceTable === table && fk.sourceColumn === `${key}_id`)
+    if (forward) return { type: 'forward', ...forward }
+    const reverse = keys.find((fk) => fk.targetTable === table && fk.sourceTable === key)
+    if (reverse) return { type: 'reverse', ...reverse }
+    throw new QueryValidationError(
+        `Cannot resolve include "${key}" on table "${table}". No foreign key relationship found. ` +
+            `Check that column "${key}_id" on "${table}" references another table, or that table ` +
+            `"${key}" has a foreign key pointing to "${table}".`
+    )
+}
+
+/** The caller's include, checked: an object of keys, each `true`, `false` or options. */
+function parseInclude(raw: unknown): IncludeClause | null {
+    if (raw === undefined || raw === null) return null
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        if (Array.isArray(raw) && raw.length === 0) return null
+        throw new QueryValidationError(
+            'include is { relation: true } or { relation: { where, orderBy, limit, include } }'
+        )
+    }
+    const clause: IncludeClause = {}
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+        ident(key)
+        if (typeof value === 'boolean') {
+            clause[key] = value
+            continue
+        }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            throw new QueryValidationError(
+                `include.${key} is true or { where, orderBy, limit, include }`
+            )
+        }
+        const options = value as Record<string, unknown>
+        for (const option of Object.keys(options)) {
+            if (!['where', 'orderBy', 'limit', 'include'].includes(option)) {
+                throw new QueryValidationError(
+                    `include.${key} takes where, orderBy, limit and include, not ${option}`
+                )
+            }
+        }
+        clause[key] = {
+            where: options.where as WhereClause | undefined,
+            orderBy: options.orderBy as OrderByClause | undefined,
+            limit: options.limit as number | undefined,
+            include: (parseInclude(options.include) ?? undefined) as IncludeClause | undefined,
+        }
+    }
+    return Object.values(clause).some(Boolean) ? clause : null
+}
+
+/** The columns this level's includes join on, so a `select` that leaves them out still resolves. */
+async function includeJoinColumns(
+    db: Queryable,
+    schema: string,
+    table: string,
+    include: IncludeClause
+): Promise<string[]> {
+    const keys = await getForeignKeys(db, schema)
+    const columns = new Set<string>()
+    for (const [key, value] of Object.entries(include)) {
+        if (!value) continue
+        const relation = resolveRelation(table, key, keys)
+        columns.add(relation.type === 'forward' ? relation.sourceColumn : relation.targetColumn)
+    }
+    return [...columns]
+}
+
+/** The include's own where, ANDed after the join's IN list (params continue from it). */
+function extraConditions(where: WhereClause | undefined, startIndex: number) {
+    if (!where || Object.keys(where).length === 0) return { sql: '', values: [] as unknown[] }
+    const built = buildWhereClause(where, startIndex)
+    const condition = built.clause.replace(/^WHERE /, '')
+    return { sql: condition ? ` AND (${condition})` : '', values: built.values }
+}
+
+/**
+ * Bring each include's related rows onto `rows`, in place: two queries per
+ * key whatever the number of rows (an IN list, never one per row), and per
+ * parent at most `limit` related rows (and never more than a find returns).
+ */
+async function resolveIncludes(
+    db: Queryable,
+    schema: string,
+    table: string,
+    rows: Record<string, unknown>[],
+    include: IncludeClause,
+    depth = 0
+): Promise<void> {
+    if (rows.length === 0) return
+    if (depth >= MAX_INCLUDE_DEPTH) {
+        throw new QueryValidationError(`include nests at most ${MAX_INCLUDE_DEPTH} levels deep`)
+    }
+    const keys = await getForeignKeys(db, schema)
+
+    for (const [key, value] of Object.entries(include)) {
+        if (!value) continue
+        const options: IncludeOptions = value === true ? {} : value
+        const relation = resolveRelation(table, key, keys)
+
+        if (relation.type === 'forward') {
+            const ids = [
+                ...new Set(rows.map((r) => r[relation.sourceColumn]).filter((v) => v != null)),
+            ]
+            if (ids.length === 0) {
+                for (const row of rows) row[key] = null
+                continue
+            }
+            const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ')
+            const extra = extraConditions(options.where, ids.length + 1)
+            const result = await db.query(
+                `SELECT * FROM ${ident(schema)}.${ident(relation.targetTable)} WHERE ${ident(relation.targetColumn)} IN (${placeholders})${extra.sql}`,
+                [...ids, ...extra.values]
+            )
+            const related = result.rows as Record<string, unknown>[]
+            if (options.include) {
+                await resolveIncludes(
+                    db,
+                    schema,
+                    relation.targetTable,
+                    related,
+                    options.include,
+                    depth + 1
+                )
+            }
+            const byId = new Map(related.map((r) => [String(r[relation.targetColumn]), r]))
+            for (const row of rows) {
+                const id = row[relation.sourceColumn]
+                row[key] = id == null ? null : (byId.get(String(id)) ?? null)
+            }
+            continue
+        }
+
+        const ids = [...new Set(rows.map((r) => r[relation.targetColumn]).filter((v) => v != null))]
+        if (ids.length === 0) {
+            for (const row of rows) row[key] = []
+            continue
+        }
+        const perParent =
+            options.limit !== undefined
+                ? (clampInt(options.limit, MAX_LIMIT) ?? MAX_LIMIT)
+                : MAX_LIMIT
+        const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ')
+        const extra = extraConditions(options.where, ids.length + 1)
+        const order =
+            buildOrderByClause(options.orderBy) || `ORDER BY ${ident(relation.sourceColumn)}`
+        const fk = ident(relation.sourceColumn)
+        const result = await db.query(
+            `SELECT * FROM (SELECT related.*, row_number() OVER (PARTITION BY ${fk} ${order}) AS ${ident(RANK_COLUMN)} ` +
+                `FROM ${ident(schema)}.${ident(relation.sourceTable)} related WHERE ${fk} IN (${placeholders})${extra.sql}) ranked ` +
+                `WHERE ${ident(RANK_COLUMN)} <= ${perParent} ORDER BY ${ident(RANK_COLUMN)}`,
+            [...ids, ...extra.values]
+        )
+        const related = (result.rows as Record<string, unknown>[]).map((r) => {
+            const { [RANK_COLUMN]: _rank, ...rest } = r
+            return rest
+        })
+        if (options.include) {
+            await resolveIncludes(
+                db,
+                schema,
+                relation.sourceTable,
+                related,
+                options.include,
+                depth + 1
+            )
+        }
+        const byParent = new Map<string, Record<string, unknown>[]>()
+        for (const r of related) {
+            const parent = String(r[relation.sourceColumn])
+            const list = byParent.get(parent)
+            if (list) list.push(r)
+            else byParent.set(parent, [r])
+        }
+        for (const row of rows) {
+            const id = row[relation.targetColumn]
+            row[key] = id == null ? [] : (byParent.get(String(id)) ?? [])
+        }
+    }
+}
+
+/**
+ * Run a read with its includes: the join columns a narrow `select` left out
+ * are read too and taken off again, so `select: ['id', 'title']` with
+ * `include: { author: true }` still finds the author.
+ */
+async function readWithIncludes(
+    db: Queryable,
+    schema: string,
+    tableName: string,
+    select: string[] | undefined,
+    include: IncludeClause | null,
+    run: (columns: string) => Promise<Record<string, unknown>[]>
+): Promise<Record<string, unknown>[]> {
+    if (!include) return run(buildSelectColumns(select))
+    let added: string[] = []
+    let columns = select
+    if (select && select.length > 0) {
+        const needed = await includeJoinColumns(db, schema, tableName, include)
+        added = needed.filter((column) => !select.includes(column))
+        columns = [...select, ...added]
+    }
+    const rows = await run(buildSelectColumns(columns))
+    await resolveIncludes(db, schema, tableName, rows, include)
+    if (added.length > 0) {
+        for (const row of rows) for (const column of added) delete row[column]
+    }
+    return rows
+}
+
 /**
  * Execute one structured-protocol operation against the mock's schema. Returns
  * a status + JSON body; never throws on user-caused failures.
@@ -310,14 +597,11 @@ export async function executeDbOperation(
     try {
         const table = `${ident(schema)}.${ident(tableName)}`
 
-        if (
-            options.include &&
-            (!Array.isArray(options.include) || options.include.length > 0) &&
-            Object.keys(options.include).length > 0
-        ) {
+        const include = parseInclude(options.include)
+        if (include && !INCLUDE_OPERATIONS.has(operation)) {
             return {
                 status: 400,
-                body: { error: 'include is not yet supported on the public API' },
+                body: { error: 'include works on find, findMany, findFirst and findOne' },
             }
         }
 
@@ -329,18 +613,26 @@ export async function executeDbOperation(
                 const limitValue = limit !== undefined ? clampInt(limit, MAX_LIMIT) : MAX_LIMIT
                 const offsetValue = offset !== undefined ? clampInt(offset, 1e9) : null
 
-                const query = [
-                    `SELECT ${buildSelectColumns(select)} FROM ${table}`,
-                    whereClause.clause,
-                    buildOrderByClause(orderBy),
-                    limitValue !== null ? `LIMIT ${limitValue}` : '',
-                    offsetValue !== null && offsetValue > 0 ? `OFFSET ${offsetValue}` : '',
-                ]
-                    .filter(Boolean)
-                    .join(' ')
-
-                const result = await db.query(query, whereClause.values)
-                return { status: 200, body: { data: result.rows } }
+                const rows = await readWithIncludes(
+                    db,
+                    schema,
+                    tableName,
+                    select,
+                    include,
+                    async (columns) => {
+                        const query = [
+                            `SELECT ${columns} FROM ${table}`,
+                            whereClause.clause,
+                            buildOrderByClause(orderBy),
+                            limitValue !== null ? `LIMIT ${limitValue}` : '',
+                            offsetValue !== null && offsetValue > 0 ? `OFFSET ${offsetValue}` : '',
+                        ]
+                            .filter(Boolean)
+                            .join(' ')
+                        return (await db.query(query, whereClause.values)).rows
+                    }
+                )
+                return { status: 200, body: { data: rows } }
             }
 
             case 'findFirst':
@@ -348,17 +640,25 @@ export async function executeDbOperation(
                 const { where, select, orderBy } = options
                 const whereClause = where ? buildWhereClause(where) : { clause: '', values: [] }
 
-                const query = [
-                    `SELECT ${buildSelectColumns(select)} FROM ${table}`,
-                    whereClause.clause,
-                    buildOrderByClause(orderBy),
-                    'LIMIT 1',
-                ]
-                    .filter(Boolean)
-                    .join(' ')
-
-                const result = await db.query(query, whereClause.values)
-                return { status: 200, body: { data: result.rows[0] ?? null } }
+                const rows = await readWithIncludes(
+                    db,
+                    schema,
+                    tableName,
+                    select,
+                    include,
+                    async (columns) => {
+                        const query = [
+                            `SELECT ${columns} FROM ${table}`,
+                            whereClause.clause,
+                            buildOrderByClause(orderBy),
+                            'LIMIT 1',
+                        ]
+                            .filter(Boolean)
+                            .join(' ')
+                        return (await db.query(query, whereClause.values)).rows
+                    }
+                )
+                return { status: 200, body: { data: rows[0] ?? null } }
             }
 
             case 'insert': {

@@ -330,6 +330,28 @@ const total = await client.db.maps.count({ where: { ownerId: 'u1' } })
 throw a `409`, the supported idempotency signal (insert, and on 409 treat the row as
 existing).
 
+Bring related rows along with `include`, by your foreign keys: one query per relation for all
+the rows, never one per row.
+
+```ts
+const posts = await client.db.posts.find({
+    include: {
+        author: true, // posts.author_id → the author row, or null
+        comments: {
+            // every comments row pointing at the post, per post
+            where: { hidden: false },
+            orderBy: { createdAt: 'desc' },
+            limit: 5, // per post, at most 1,000
+            include: { user: true }, // nests five levels deep
+        },
+    },
+})
+```
+
+`include` works on `find`, `findMany`, `findFirst` and `findOne`, and a narrow `select` still
+resolves (the joining column is read and taken off again). A key with no foreign key behind it
+throws a `400` saying what to check.
+
 ```ts
 // The one place DDL enters from outside.
 await client.db.migrate({ sql: 'CREATE TABLE IF NOT EXISTS profiles (id uuid primary key);' })
