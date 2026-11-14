@@ -1,6 +1,6 @@
 {
     "name": "dontcode",
-    "version": "0.2.17",
+    "version": "0.2.18",
     "description": "Public SDK for DontCode Backend. A thin, typed proxy over the v1 HTTP gateway.",
     "keywords": [
         "dontcode",
