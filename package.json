@@ -52,6 +52,12 @@
             "import": "./dist/node.js",
             "require": "./dist/node.cjs",
             "default": "./dist/node.js"
+        },
+        "./browser": {
+            "types": "./dist/browser/index.d.ts",
+            "import": "./dist/browser/index.js",
+            "require": "./dist/browser/index.cjs",
+            "default": "./dist/browser/index.js"
         }
     },
     "bin": {

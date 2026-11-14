@@ -225,6 +225,85 @@ await client.auth.deleteAccount({ accessToken, code }) // `code_wrong` / `code_e
 
 The mock gateway accepts `123456` as the code.
 
+### Bot protection
+
+The owner's **Bot Protection** switch (Users > Sign-in settings) puts a bot check on
+sign-up, sign-in and password reset, and DontCode can ask for one by itself while an app is
+under attack. The check is drawn in the visitor's browser and its token rides your server's
+call. Tell the client your forms draw it, and the platform starts asking:
+
+```ts
+const client = dontcode({ botCheck: true }) // { mfa: true } once your MFA form draws it too
+
+// Server: what the browser needs, and which forms show it while the switch is on
+const { enabled, surfaces, widget } = await client.auth.captchaConfig()
+
+// Browser: draw it, keep the token (dontcode/browser)
+import { renderBotCheck } from 'dontcode/browser'
+const check = await renderBotCheck(document.getElementById('bot-check')!, widget!, {
+    onToken: (token) => (form.captchaToken.value = token),
+})
+
+// Server: send it along
+await client.auth.login({ email, password, captchaToken, request })
+```
+
+A call that needs the check fails with `err.captchaRequired` (`CaptchaRequired`, or
+`CaptchaFailed` for a rejected token): show the widget (or `check.reset()`) and let the
+person try again. Leave `botCheck` off until your forms draw it: the platform never asks a
+check of an app that did not say it can show one, so turning it on early locks people out.
+
+### Promotional email consent
+
+While the owner has promotional email turned on, your sign-up form shows one unticked line
+asking whether the person wants news and offers. DontCode records the yes, sends the receipt
+the law asks for and reminds them every two years. Never keep a consent list of your own:
+promotions go out as a `kind: 'promotion'` broadcast, which reaches only the people who said
+yes.
+
+```ts
+const { promotionsOptIn } = await client.auth.signupForm() // show the line when true
+await client.auth.signup({ email, password, promotionsOptIn: ticked, request })
+```
+
+### Social sign-in
+
+Kakao, Google, GitHub and Apple, with the provider apps the owner set up under Users >
+Sign-in settings; their client secrets stay with DontCode. Register your callback URL (say
+`https://yourapp.com/auth/callback/kakao`) as a redirect URL in that provider app.
+
+```ts
+import { oauthStateMatches, readOAuthStateCookie, serializeOAuthStateCookie } from 'dontcode'
+
+// The buttons
+const providers = await client.auth.oauth.providers() // [{ name: 'kakao', clientId }]
+
+// GET /auth/start/kakao: send the visitor to the provider
+const redirectUri = 'https://yourapp.com/auth/callback/kakao'
+const { url, state, formPost } = await client.auth.oauth.authorizeUrl({
+    provider: 'kakao',
+    redirectUri,
+})
+headers.append('Set-Cookie', serializeOAuthStateCookie(state, { formPost }))
+// → 302 to url
+
+// GET (Apple: POST) /auth/callback/kakao?code=…&state=…
+if (!oauthStateMatches(params.state, readOAuthStateCookie(req.headers.get('cookie')))) {
+    // refuse: the sign-in did not start here
+}
+const result = await client.auth.oauth.callback({
+    provider: 'kakao',
+    code: params.code,
+    redirectUri,
+    request,
+})
+// result is login's answer: result.tokens, or result.mfa_required with a challenge_token
+```
+
+Apple answers with a form POST, so read `code`, `state` and `user` from the form body and
+pass `user` as `appleUser` on a first sign-in. The mock gateway has no provider apps:
+`providers()` is empty offline.
+
 ## Database
 
 Structured queries only; there is no raw-SQL escape hatch. Schema changes go through

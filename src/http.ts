@@ -33,6 +33,8 @@ export interface RequestOptions extends ForVisitor {
     accessToken?: string
     /** Override the client's timeout for this one call (ms). `0` disables it. */
     timeoutMs?: number
+    /** Further headers for this one call (the auth calls' capabilities). */
+    headers?: Record<string, string>
 }
 
 /**
@@ -63,6 +65,7 @@ export class Transport {
         if (this.config.apiKey) headers['Authorization'] = `Bearer ${this.config.apiKey}`
         if (this.config.appUrl) headers['X-App-Url'] = this.config.appUrl
         if (opts?.accessToken) headers['X-Access-Token'] = opts.accessToken
+        if (opts?.headers) Object.assign(headers, opts.headers)
         return headers
     }
 

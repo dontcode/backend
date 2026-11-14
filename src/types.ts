@@ -74,6 +74,12 @@ export interface SignupInput extends ForVisitor {
      *  `EmailTypoSuspected` whose `didYouMean` the person declined). Never
      *  overrides an address that cannot receive mail. */
     acceptAsTyped?: boolean
+    /** The person ticked "send me news and offers" on your sign-up form. Show
+     *  that line only while `auth.signupForm()` says `promotionsOptIn`; the
+     *  platform records the yes and sends the receipt the law asks for. */
+    promotionsOptIn?: boolean
+    /** The bot check's token, from the widget your form shows (`captchaConfig`). */
+    captchaToken?: string
 }
 
 export interface SignupResult {
@@ -87,6 +93,8 @@ export interface SignupResult {
 export interface LoginInput extends ForVisitor {
     email: string
     password: string
+    /** The bot check's token, when your form shows one. */
+    captchaToken?: string
 }
 
 export interface AuthTokens {
@@ -114,12 +122,16 @@ export interface VerifyEmailInput extends ForVisitor {
 
 export interface ForgotPasswordInput extends ForVisitor {
     email: string
+    /** The bot check's token, when your form shows one. */
+    captchaToken?: string
 }
 
 export interface ResetPasswordInput extends ForVisitor {
     code: string
     password: string
     email?: string
+    /** The bot check's token, when your form shows one. */
+    captchaToken?: string
 }
 
 export interface CurrentUser {
@@ -137,6 +149,8 @@ export interface MfaChallengeInput extends ForVisitor {
     challengeToken: string
     code?: string
     recoveryCode?: string
+    /** The bot check's token, when your MFA form shows one (`botCheck: { mfa: true }`). */
+    captchaToken?: string
 }
 
 export interface MfaEnrollResult {
@@ -174,6 +188,79 @@ export interface SimpleResult {
     success: boolean
     message?: string
     [key: string]: unknown
+}
+
+/** The forms a bot check can cover. */
+export type BotCheckSurface = 'login' | 'signup' | 'password_reset'
+
+/**
+ * What the browser loads to draw the bot check: the vendor's script, its
+ * global, and the site key. Provider-agnostic: render it with
+ * `renderBotCheck` from `dontcode/browser`, never by naming a vendor.
+ */
+export interface BotCheckWidget {
+    provider: string
+    siteKey: string
+    scriptUrl: string
+    globalName: string
+}
+
+export interface BotCheckConfig {
+    /** The owner's Bot Protection switch. */
+    enabled: boolean
+    /** The forms it covers while enabled. */
+    surfaces: BotCheckSurface[]
+    /** Null when the platform has no provider: nothing can be asked then. */
+    widget: BotCheckWidget | null
+}
+
+export interface SignupFormConfig {
+    /** Show the unticked "news and offers" line on your sign-up form. */
+    promotionsOptIn: boolean
+}
+
+/** A social sign-in the owner turned on: its public client ID, never a secret. */
+export interface OAuthProvider {
+    name: OAuthProviderName
+    clientId: string
+}
+
+export type OAuthProviderName = 'kakao' | 'google' | 'github' | 'apple'
+
+export interface OAuthAuthorizeInput {
+    provider: OAuthProviderName
+    /** Your callback, registered as a redirect URL in the owner's provider app. */
+    redirectUri: string
+    /** Your own state; one is made for you when left out. */
+    state?: string
+}
+
+export interface OAuthAuthorizeResult {
+    /** Send the visitor here. */
+    url: string
+    /** Keep it in a short-lived httpOnly cookie (`serializeOAuthStateCookie`)
+     *  and check it on the callback. */
+    state: string
+    /** Apple calls your callback with a cross-site form POST: its state cookie
+     *  must be `SameSite=None` (the cookie helper does that when this is true). */
+    formPost: boolean
+}
+
+export interface OAuthCallbackInput extends ForVisitor {
+    provider: OAuthProviderName
+    /** The `code` the provider sent back. */
+    code: string
+    /** The same redirect URI the authorize URL carried. */
+    redirectUri: string
+    /** The role a brand-new person gets, as on `signup`. */
+    role?: string
+    /** Apple's `user` form field on a first sign-in, passed as Apple posted it. */
+    appleUser?: string | null
+}
+
+export interface OAuthCallbackResult extends LoginResult {
+    /** The person was created by this sign-in. */
+    is_new_user?: boolean
 }
 
 // ---------------------------------------------------------------------------

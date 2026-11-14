@@ -1,5 +1,6 @@
 import { readSessionToken } from './cookies'
 import { Transport } from './http'
+import { OAuthApi } from './oauth'
 import {
     SessionVerifier,
     decodeAccessToken,
@@ -10,6 +11,7 @@ import {
 } from './session'
 import type {
     AccountDeletionRequestResult,
+    BotCheckConfig,
     DeleteAccountInput,
     ForgotPasswordInput,
     LoginInput,
@@ -20,6 +22,7 @@ import type {
     MfaEnrollConfirmInput,
     MfaEnrollResult,
     ResetPasswordInput,
+    SignupFormConfig,
     SignupInput,
     SignupResult,
     SimpleResult,
@@ -28,6 +31,27 @@ import type {
 import type { ForVisitor } from './visitor'
 
 const AUTH_BASE = '/api/v1/auth'
+
+/**
+ * Which of your forms show the bot check. The platform asks for a check only
+ * from an app that says it can show one, so leave it off until your forms
+ * draw the widget (`renderBotCheck` from `dontcode/browser`) and send its
+ * token: an app that announces it and never draws one locks people out.
+ *
+ *   true            sign-in, sign-up and password reset show it
+ *   { mfa: true }   ...and the MFA challenge form too
+ */
+export type BotCheckOption = boolean | { mfa?: boolean }
+
+/** The header the auth service reads (twin of auth-service lib/auth/client-capabilities.ts). */
+const CAPABILITY_HEADER = 'X-DontCode-Auth-Capabilities'
+
+function capabilityHeaders(botCheck: BotCheckOption | undefined, mfaForm: boolean) {
+    if (!botCheck) return undefined
+    const mfa = typeof botCheck === 'object' && botCheck.mfa === true
+    if (mfaForm) return mfa ? { [CAPABILITY_HEADER]: 'mfa-captcha' } : undefined
+    return { [CAPABILITY_HEADER]: mfa ? 'captcha,mfa-captcha' : 'captcha' }
+}
 
 /** Shape of `GET /api/v1/info`: validates the credential and reports what it
  *  can do. For device tokens, capabilities follow the signed-in user's role. */
@@ -48,7 +72,10 @@ export interface InfoResult {
  * short-lived challenge token for real session tokens.
  */
 export class MfaApi {
-    constructor(private readonly transport: Transport) {}
+    constructor(
+        private readonly transport: Transport,
+        private readonly botCheck?: BotCheckOption
+    ) {}
 
     /** Complete an MFA login. Pass the `challenge_token` from `login`, plus
      *  either the authenticator `code` or a `recoveryCode`. */
@@ -59,8 +86,9 @@ export class MfaApi {
                 challenge_token: input.challengeToken,
                 code: input.code,
                 recovery_code: input.recoveryCode,
+                ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
             },
-            { request: input.request }
+            { request: input.request, headers: capabilityHeaders(this.botCheck, true) }
         )
     }
 
@@ -107,14 +135,38 @@ export class MfaApi {
  */
 export class AuthApi {
     readonly mfa: MfaApi
+    /** Social sign-in: Kakao, Google, GitHub and Apple, as the owner turned them on. */
+    readonly oauth: OAuthApi
     private readonly sessions: SessionVerifier
 
     constructor(
         private readonly transport: Transport,
-        sessionOptions?: SessionOptions
+        sessionOptions?: SessionOptions,
+        private readonly botCheck?: BotCheckOption
     ) {
-        this.mfa = new MfaApi(transport)
+        this.mfa = new MfaApi(transport, botCheck)
+        this.oauth = new OAuthApi(transport)
         this.sessions = new SessionVerifier(this, sessionOptions)
+    }
+
+    /** The options a form's call carries: its visitor, and what your forms can show. */
+    private formCall(input: ForVisitor) {
+        return { request: input.request, headers: capabilityHeaders(this.botCheck, false) }
+    }
+
+    /**
+     * What the browser needs to draw the bot check, and which forms it covers
+     * while the owner's Bot Protection is on. Draw it on those forms, and on
+     * any form whose call failed with `err.captchaRequired` (the platform can
+     * ask for one on its own while an app is under attack).
+     */
+    captchaConfig(): Promise<BotCheckConfig> {
+        return this.transport.get<BotCheckConfig>(`${AUTH_BASE}/captcha/config`)
+    }
+
+    /** What your sign-up form shows beyond its fields: the promotional consent line. */
+    signupForm(): Promise<SignupFormConfig> {
+        return this.transport.get<SignupFormConfig>(`${AUTH_BASE}/signup/form`)
     }
 
     /** Create an account. If the project requires email verification the
@@ -135,8 +187,10 @@ export class AuthApi {
                 name: input.name,
                 role: input.role,
                 ...(input.acceptAsTyped === true ? { accept_as_typed: true } : {}),
+                ...(input.promotionsOptIn === true ? { promotions_opt_in: true } : {}),
+                ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
             },
-            { request: input.request }
+            this.formCall(input)
         )
     }
 
@@ -146,8 +200,12 @@ export class AuthApi {
     login(input: LoginInput): Promise<LoginResult> {
         return this.transport.json<LoginResult>(
             `${AUTH_BASE}/login`,
-            { email: input.email, password: input.password },
-            { request: input.request }
+            {
+                email: input.email,
+                password: input.password,
+                ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
+            },
+            this.formCall(input)
         )
     }
 
@@ -222,16 +280,24 @@ export class AuthApi {
     forgotPassword(input: ForgotPasswordInput): Promise<SimpleResult> {
         return this.transport.json<SimpleResult>(
             `${AUTH_BASE}/forgot-password`,
-            { email: input.email },
-            { request: input.request }
+            {
+                email: input.email,
+                ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
+            },
+            this.formCall(input)
         )
     }
 
     resetPassword(input: ResetPasswordInput): Promise<SimpleResult> {
         return this.transport.json<SimpleResult>(
             `${AUTH_BASE}/reset-password`,
-            { code: input.code, password: input.password, email: input.email },
-            { request: input.request }
+            {
+                code: input.code,
+                password: input.password,
+                email: input.email,
+                ...(input.captchaToken ? { captcha_token: input.captchaToken } : {}),
+            },
+            this.formCall(input)
         )
     }
 

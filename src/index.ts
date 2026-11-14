@@ -7,7 +7,8 @@ export type { DontCodeErrorBody } from './errors'
 export type { RateLimitStatus, RateLimitView } from './rate-limit'
 
 export { AuthApi, MfaApi } from './auth'
-export type { InfoResult } from './auth'
+export type { BotCheckOption, InfoResult } from './auth'
+export { OAuthApi } from './oauth'
 export type { ForVisitor, VisitorRequest } from './visitor'
 export { TableQuery, type DbClient } from './db'
 export { BucketClient, PublicBucketClient, createStorage, type StorageClient } from './storage'
@@ -27,11 +28,16 @@ export type {
 } from './session'
 
 export {
+    DEFAULT_OAUTH_STATE_COOKIE_NAME,
     DEFAULT_SESSION_COOKIE_NAME,
+    clearOAuthStateCookie,
     clearSessionCookie,
+    oauthStateMatches,
+    readOAuthStateCookie,
     readSessionToken,
+    serializeOAuthStateCookie,
     serializeSessionCookie,
 } from './cookies'
-export type { SessionCookieOptions } from './cookies'
+export type { OAuthStateCookieOptions, SessionCookieOptions } from './cookies'
 
 export type * from './types'

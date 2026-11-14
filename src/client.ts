@@ -1,4 +1,4 @@
-import { AuthApi } from './auth'
+import { AuthApi, type BotCheckOption } from './auth'
 import { CacheClient, createCache } from './cache'
 import { createDb, type DbClient } from './db'
 import { Transport } from './http'
@@ -32,6 +32,10 @@ export interface DontCodeClientOptions {
     timeoutMs?: number
     /** Caching + timeout policy for `auth.getSession` / `auth.sessionFromCookies`. */
     session?: SessionOptions
+    /** Your sign-in, sign-up and password reset forms show the bot check
+     *  (`true`), and your MFA form too (`{ mfa: true }`). Off by default: the
+     *  platform asks for a check only from an app that says it can show one. */
+    botCheck?: BotCheckOption
     /** Notified after every counted response with what is left of that
      *  namespace's budget. Fires on successes too, which is what makes it
      *  useful: a batch job can ease off at 80% spent instead of learning the
@@ -128,7 +132,7 @@ export function dontcode(options: DontCodeClientOptions = {}): DontCodeClient {
     })
 
     return {
-        auth: new AuthApi(transport, options.session),
+        auth: new AuthApi(transport, options.session, options.botCheck),
         db: createDb(transport),
         storage: createStorage(transport),
         cache: createCache(transport),

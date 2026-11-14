@@ -32,6 +32,8 @@ export interface DontCodeErrorBody {
     /** A corrected email address on a sign-up refusal
      *  (`UndeliverableEmailException`, `EmailTypoSuspected`). */
     did_you_mean?: string
+    /** Set when the auth service asks for the bot check. */
+    captcha_required?: boolean
     [key: string]: unknown
 }
 
@@ -99,6 +101,14 @@ export class DontCodeError extends Error {
      *  person typing. */
     get didYouMean(): string | undefined {
         return typeof this.body.did_you_mean === 'string' ? this.body.did_you_mean : undefined
+    }
+
+    /** True when the auth service wants the bot check: show (or reset) the
+     *  widget and let the person try again with its token (`CaptchaRequired`,
+     *  or `CaptchaFailed` for a token it rejected). Only asked of an app that
+     *  announced it can show one (`botCheck`). */
+    get captchaRequired(): boolean {
+        return this.body.captcha_required === true
     }
 
     /** Which budget was exhausted, when the responder named it. */

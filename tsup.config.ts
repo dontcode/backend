@@ -9,6 +9,7 @@ export default defineConfig({
     entry: {
         index: 'src/index.ts',
         node: 'src/node.ts',
+        'browser/index': 'src/browser/index.ts',
         cli: 'src/cli.ts',
         'mcp/index': 'src/mcp/index.ts',
         'mock/index': 'src/mock/index.ts',

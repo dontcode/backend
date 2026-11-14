@@ -433,6 +433,11 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
             return
         }
 
+        if (path.startsWith('/api/v1/auth/') && method === 'GET') {
+            handleAuthRead(res, path.slice('/api/v1/auth/'.length))
+            return
+        }
+
         if (path.startsWith('/api/v1/realtime')) {
             handleRealtime(res, path.slice('/api/v1/realtime'.length), method, raw)
             return
@@ -631,6 +636,15 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
                 return
             }
 
+            case 'oauth/callback':
+                // Social sign-in needs the owner's provider app and its secret,
+                // which only the live platform holds.
+                sendJson(res, 400, {
+                    success: false,
+                    error: 'Social sign-in works against the live gateway only: the mock has no provider apps',
+                })
+                return
+
             case 'mfa/challenge':
                 // The mock's login never demands a second factor, so a challenge
                 // should not occur. Be explicit rather than silently succeed.
@@ -640,6 +654,27 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
                 })
                 return
 
+            default:
+                sendJson(res, 404, { error: 'Unknown auth endpoint' })
+        }
+    }
+
+    /**
+     * What an app reads from auth. Offline there is no bot check vendor, no
+     * owner's promotional switch and no provider app, so each answers "off",
+     * the way the live service answers a project that has none of them.
+     */
+    function handleAuthRead(res: ServerResponse, endpoint: string): void {
+        switch (endpoint) {
+            case 'captcha/config':
+                sendJson(res, 200, { enabled: false, surfaces: [], widget: null })
+                return
+            case 'signup/form':
+                sendJson(res, 200, { promotionsOptIn: false })
+                return
+            case 'oauth/providers':
+                sendJson(res, 200, { providers: [] })
+                return
             default:
                 sendJson(res, 404, { error: 'Unknown auth endpoint' })
         }

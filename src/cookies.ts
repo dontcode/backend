@@ -33,7 +33,12 @@ export interface SessionCookieOptions {
     sameSite?: 'lax' | 'strict' | 'none'
 }
 
-function serialize(name: string, value: string, options: SessionCookieOptions, maxAge: number): string {
+function serialize(
+    name: string,
+    value: string,
+    options: SessionCookieOptions,
+    maxAge: number
+): string {
     const sameSite = options.sameSite ?? 'lax'
     // SameSite=None is meaningless without Secure (browsers drop it), so force
     // Secure on there; otherwise it defaults on and the caller can opt out.
@@ -82,4 +87,72 @@ export function readSessionToken(
         }
     }
     return null
+}
+
+/** Default cookie name for a social sign-in's state. */
+export const DEFAULT_OAUTH_STATE_COOKIE_NAME = 'dc_oauth_state'
+
+/** Ten minutes: long enough to sign in at the provider, short enough to go stale. */
+const OAUTH_STATE_MAX_AGE_SECONDS = 600
+
+export interface OAuthStateCookieOptions {
+    /** Cookie name. Default `dc_oauth_state`. */
+    name?: string
+    /** Default `/`. */
+    path?: string
+    domain?: string
+    /** The provider calls back with a cross-site form POST (Apple:
+     *  `authorizeUrl`'s `formPost`), so the cookie must be `SameSite=None`. */
+    formPost?: boolean
+}
+
+/** Build a `Set-Cookie` value that keeps a social sign-in's state for ten minutes. */
+export function serializeOAuthStateCookie(
+    state: string,
+    options: OAuthStateCookieOptions = {}
+): string {
+    return serialize(
+        options.name ?? DEFAULT_OAUTH_STATE_COOKIE_NAME,
+        state,
+        {
+            path: options.path,
+            domain: options.domain,
+            httpOnly: true,
+            sameSite: options.formPost ? 'none' : 'lax',
+        },
+        OAUTH_STATE_MAX_AGE_SECONDS
+    )
+}
+
+/** Build a `Set-Cookie` value that clears the state once the callback used it. */
+export function clearOAuthStateCookie(options: OAuthStateCookieOptions = {}): string {
+    return serialize(
+        options.name ?? DEFAULT_OAUTH_STATE_COOKIE_NAME,
+        '',
+        { path: options.path, domain: options.domain, sameSite: options.formPost ? 'none' : 'lax' },
+        0
+    )
+}
+
+/** Read a social sign-in's state out of a `Cookie` request header, or `null`. */
+export function readOAuthStateCookie(
+    cookieHeader: string | null | undefined,
+    name: string = DEFAULT_OAUTH_STATE_COOKIE_NAME
+): string | null {
+    return readSessionToken(cookieHeader, name)
+}
+
+/**
+ * Whether the state the provider sent back is the one you kept. Both must be
+ * present and equal; compared without stopping at the first difference, so the
+ * time it takes says nothing about the expected value.
+ */
+export function oauthStateMatches(
+    returned: string | null | undefined,
+    kept: string | null | undefined
+): boolean {
+    if (!returned || !kept || returned.length !== kept.length) return false
+    let diff = 0
+    for (let i = 0; i < returned.length; i++) diff |= returned.charCodeAt(i) ^ kept.charCodeAt(i)
+    return diff === 0
 }
