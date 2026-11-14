@@ -347,19 +347,77 @@ export interface RealtimePresenceMember {
 // Notifications
 // ---------------------------------------------------------------------------
 
+/**
+ * Who an email is for, named by who controls them; DontCode looks the
+ * address up when it goes, so your code never writes the business's address:
+ *
+ *   'owner'           the business: the DontCode account that owns the project
+ *   'contact:<name>'  an outside inbox the owner saved on Emails > Addresses
+ *   { user: id }      one of your app's users, at their verified address (the
+ *                     person signed in: their session's user id)
+ *   an address        someone in your app's data who is no user (a guest)
+ */
+export type EmailRecipient = 'owner' | `contact:${string}` | { user: string } | (string & {})
+
+/** The languages DontCode writes an email's chrome in. */
+export type EmailLanguage = 'ko' | 'en' | 'zh' | 'ja'
+
+/** The email's one button: a short label and a page on your app's own address. */
+export interface EmailAction {
+    label: string
+    href: string
+}
+
 export interface SendEmailInput {
-    /** One recipient email, or several. */
-    to: string | string[]
+    /** One recipient or a list (at most 50); each gets an email of their own. */
+    to: EmailRecipient | EmailRecipient[]
     subject: string
     /** Email body as GitHub-flavored Markdown. There is no `html`/`text` field. */
     markdownText: string
+    /** Where a Reply goes: the visitor who wrote a contact form. */
+    replyTo?: string
+    /** The chrome's language for a recipient whose own DontCode does not know. */
+    locale?: EmailLanguage
+    action?: EmailAction
 }
 
 export interface SendEmailResult {
     success: boolean
-    /** Provider message id when the send was accepted. */
+    /** The first email's id, when the send was accepted. */
     messageId?: string
+    /** Each recipient's email id, in the order sent. */
+    messageIds?: string[]
     /** Set when `success` is `false`. */
+    error?: string
+}
+
+export interface BroadcastVersion {
+    subject: string
+    markdownText: string
+}
+
+export interface BroadcastInput {
+    /** Everyone who holds this role in your app. */
+    to: { role: string }
+    /**
+     * 'notice' (default): terms, an outage, a change to their account or
+     * orders. 'promotion': anything marketing, which reaches only people who
+     * said yes on sign-up, once the owner turned promotional email on; DontCode
+     * adds the ad marker and unsubscribe link and holds it 21:00 to 08:00 KST.
+     */
+    kind?: 'notice' | 'promotion'
+    /** The words in each of the project's languages; a missing one is refused. */
+    versions: Partial<Record<EmailLanguage, BroadcastVersion>>
+    action?: EmailAction
+    replyTo?: string
+}
+
+export interface BroadcastResult {
+    success: boolean
+    /** Its progress is on the project's Emails page, where the owner can stop it. */
+    broadcastId?: string
+    /** How many people it reaches. */
+    total?: number
     error?: string
 }
 

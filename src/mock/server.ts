@@ -265,8 +265,13 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
     const cache = createMockCache()
 
     // Notifications (`client.notifications`). Accepts sends and logs them; no
-    // mail actually leaves the process in local dev.
-    const notifications = createMockNotifications({ quiet })
+    // mail actually leaves the process in local dev. Recipients named as app
+    // users and a broadcast's role are checked against the mock's own users.
+    const notifications = createMockNotifications({
+        quiet,
+        isUser: (id) => [...users.values()].some((u) => u.id === id),
+        countRole: (role) => [...users.values()].filter((u) => u.role === role).length,
+    })
 
     // Payments (`client.payments`). The plan/feature catalog and subscriptions
     // are durable domain state, so they persist to disk like auth/storage

@@ -424,25 +424,51 @@ A browser connection may only use the channels named when its token was minted.
 
 ## Notifications
 
-Send transactional messages to your users. One namespace per channel — today `email`.
-Recipients and sender identity are scoped to your project by the gateway.
+Email as an Insight app sends it: from DontCode in your app's design, each recipient in their
+own language, logged on the project's Emails page. Name each recipient by who controls them
+and DontCode looks the address up when it goes, so your code never writes the business's
+address:
+
+| `to`               | Reaches                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------- |
+| `'owner'`          | the business: the DontCode account that owns the project, even after a sale                       |
+| `'contact:<name>'` | an outside inbox the owner saved on Emails > Addresses (a lawyer, a supplier)                     |
+| `{ user: id }`     | one of your app's users at their verified address (the signed-in person: their session's user id) |
+| an address         | someone in your app's data who is no user (a guest checkout)                                      |
 
 ```ts
-const res = await client.notifications.email.send({
-    to: 'user@example.com', // one address, or an array of them
-    subject: 'Welcome to the app',
-    markdownText: '# Hi\n\nThanks for signing up.', // GitHub-flavored Markdown IS the body
+await client.notifications.email.send({
+    to: ['owner', { user: order.buyer_id }], // each gets an email of their own
+    subject: 'New order',
+    markdownText: `# Order ${order.id}\n\nThanks for your order.`, // Markdown IS the body
+    action: { label: 'See the order', href: `https://shop.example/orders/${order.id}` },
+    replyTo: order.buyer_email, // optional
 })
-if (!res.success) console.error(res.error) // { success, messageId?, error? }
+
+// One email to everyone with a role, each in their own language, paced within the plan
+await client.notifications.email.broadcast({
+    to: { role: 'buyer' },
+    kind: 'notice', // or 'promotion': only people who said yes on sign-up, held 21:00 to 08:00 KST
+    versions: {
+        ko: { subject: '이용약관이 바뀝니다', markdownText: '# 이용약관이 바뀝니다' },
+        en: { subject: 'Our terms are changing', markdownText: '# Our terms are changing' },
+    },
+})
+
+// The owner's address to show on a page; null when there is none or the read fails
+const ownerAddress = await client.notifications.email.ownerAddress()
 ```
 
-`markdownText` is the only content field — there is no `html`/`text` field and no separate
-templates. Content is sanitized server-side. Only `email` exists today; future channels
-(push, sms) attach as `client.notifications.<channel>.send(...)` without changing callers.
+A recipient DontCode cannot resolve (an unsaved name, an id that is no user) refuses the whole
+send with the reason. A broadcast needs a version in every one of the project's languages; its
+progress is on the Emails page, where the owner can stop it. Broadcast only from code that
+checks the caller may (an admin). `markdownText` is the only content field: there is no
+`html`/`text` field and no separate templates; content is sanitized server-side.
 
 > The local mock gateway (`dontcode-mock`) covers auth, database, storage, cache,
-> realtime, and notifications (sends are accepted and logged, never actually delivered).
-> The MCP server currently covers auth, database, and storage.
+> realtime, notifications (sends are checked and logged, never delivered; the owner is
+> `owner@example.com`), payments and AI. The MCP server currently covers auth, database,
+> and storage.
 
 ## AI
 
