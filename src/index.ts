@@ -6,6 +6,7 @@ export type { DontCodeErrorBody } from './errors'
 
 export type { RateLimitStatus, RateLimitView } from './rate-limit'
 
+export { AiAgentApi, AiApi, AiChatApi, AiImageApi, AiSpeechApi, AiVisionApi, createAi } from './ai'
 export { AuthApi, MfaApi } from './auth'
 export type { BotCheckOption, InfoResult } from './auth'
 export { OAuthApi } from './oauth'

@@ -1,3 +1,4 @@
+import { AiApi, createAi } from './ai'
 import { AuthApi, type BotCheckOption } from './auth'
 import { CacheClient, createCache } from './cache'
 import { createDb, type DbClient } from './db'
@@ -44,6 +45,8 @@ export interface DontCodeClientOptions {
 }
 
 export interface DontCodeClient {
+    /** AI on the owner's credits: chat, vision, images, speech and agents. Server only. */
+    ai: AiApi
     auth: AuthApi
     db: DbClient
     storage: StorageClient
@@ -132,6 +135,7 @@ export function dontcode(options: DontCodeClientOptions = {}): DontCodeClient {
     })
 
     return {
+        ai: createAi(transport),
         auth: new AuthApi(transport, options.session, options.botCheck),
         db: createDb(transport),
         storage: createStorage(transport),

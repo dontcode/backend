@@ -171,6 +171,22 @@ export class Transport {
         return this.parse<T>(res, path)
     }
 
+    /**
+     * POST a body and hand back the response itself once it is known to be
+     * ok: for answers that are not one JSON document (server-sent events,
+     * audio bytes). A failure throws the same DontCodeError `json()` would.
+     */
+    async raw(path: string, body: string | FormData, opts?: RequestOptions): Promise<Response> {
+        const headers = this.headers(opts)
+        // A FormData body sets its own multipart type, boundary included.
+        if (typeof body === 'string') headers['Content-Type'] = 'application/json'
+        const res = await this.send(path, { method: 'POST', headers, body }, opts)
+        if (!res.ok) return this.parse<never>(res, path)
+        const rateLimit = readRateLimit(res.status, res.headers, path, undefined)
+        if (rateLimit) this.record(rateLimit)
+        return res
+    }
+
     private async parse<T>(res: Response, path: string): Promise<T> {
         const raw = await res.text()
         let data: unknown = null

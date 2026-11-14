@@ -444,6 +444,70 @@ templates. Content is sanitized server-side. Only `email` exists today; future c
 > realtime, and notifications (sends are accepted and logged, never actually delivered).
 > The MCP server currently covers auth, database, and storage.
 
+## AI
+
+The AI an Insight app's server has: chat, vision, image generation, speech and tool-using
+agents. Every call is charged to the project owner's DontCode credits; when they run out a
+call fails with a `402` DontCodeError, so tell the person the feature is unavailable rather
+than retrying. DontCode picks the model for the `intent` (`'quick'`, `'balanced'` (default)
+or `'thorough'`); you never name one. Server only: a page calls your own route, which checks
+who is asking before it spends the owner's credits.
+
+```ts
+const tagline = await client.ai.generate({
+    prompt: 'A tagline for a Seoul bakery',
+    intent: 'quick',
+})
+
+const { content } = await client.ai.chat.send({ messages, system: 'Answer in Korean.' })
+
+// As it is written (pipe the tokens into your own streamed response)
+await client.ai.chat.stream({ messages }, { onToken: (t) => write(t) })
+
+const { content: fields } = await client.ai.vision.analyze({
+    prompt: 'Read the total and the date off this receipt',
+    images: [receiptUrl], // http(s) URL, data: URI or base64
+})
+
+const { images } = await client.ai.image.generate({
+    prompt: 'A cozy cafe at dawn',
+    size: '1536x1024',
+})
+// images[0].url is hosted in the project's storage, permanently
+
+// Speech: a recording (≤ 4 MB) in, text out; text (≤ 2,500 characters) in, an MP3 out
+const { text } = await client.ai.speech.transcribe(await file.arrayBuffer(), { language: 'ko' })
+const { audio } = await client.ai.speech.speak('주문이 접수되었습니다', {
+    language: 'ko',
+    voice: 'woman-clear',
+})
+return new Response(audio, { headers: { 'Content-Type': 'audio/mpeg' } }) // never store it
+
+// Agents: the model calls your tools in a loop; they run on your server
+const run = await client.ai.agent.run({
+    messages: [{ role: 'user', content: 'Where is order 42?' }],
+    tools: [
+        {
+            name: 'lookupOrder',
+            description: 'Find an order by id',
+            parameters: {
+                type: 'object',
+                properties: { id: { type: 'string' } },
+                required: ['id'],
+            },
+            execute: async ({ id }) => db.orders.findFirst({ where: { id } }),
+        },
+    ],
+})
+// run.text, run.steps, run.finishReason: 'stop' | 'max-steps' | 'error'
+```
+
+Voices are `woman-friendly` (default), `woman-clear`, `man-friendly` and `man-clear` in
+Korean, English, Chinese and Japanese. AI calls wait up to two minutes for an answer to
+start (pass `timeoutMs` to change it); the `ai` budget is 300 calls a minute. Offline, the
+mock gateway answers every call in the same shapes with no model and no credits: chat echoes
+`Mock answer to: …`, speech is a quarter second of silence.
+
 ## Errors
 
 Every non-2xx response throws a `DontCodeError`:

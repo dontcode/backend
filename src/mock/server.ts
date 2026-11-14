@@ -21,6 +21,7 @@
  * It is a DEV tool: passwords are stored in plaintext, tokens are unsigned,
  * and there is no rate limiting. Never expose it to a network you don't trust.
  */
+import { answerAi } from './ai'
 import { createMockCache } from './cache'
 import { executeDbOperation, type Queryable } from './db-query'
 import { createMockNotifications } from './notifications'
@@ -446,6 +447,33 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
         if (path.startsWith('/api/v1/cache/')) {
             const result = cache.handle(method, url, raw)
             sendJson(res, result.status, result.body)
+            return
+        }
+
+        if (path.startsWith('/api/v1/ai/') && method === 'POST') {
+            const answer = answerAi(
+                path.slice('/api/v1/ai/'.length),
+                raw,
+                String(req.headers['content-type'] ?? '')
+            )
+            if (answer.kind === 'json') {
+                sendJson(res, answer.status, answer.body)
+            } else if (answer.kind === 'events') {
+                res.writeHead(200, {
+                    'Content-Type': 'text/event-stream',
+                    'Access-Control-Allow-Origin': '*',
+                })
+                for (const event of answer.events) res.write(`data: ${JSON.stringify(event)}\n\n`)
+                res.end('data: [DONE]\n\n')
+            } else {
+                res.writeHead(200, {
+                    'Content-Type': 'audio/mpeg',
+                    'Content-Length': String(answer.bytes.byteLength),
+                    'Access-Control-Allow-Origin': '*',
+                    ...answer.headers,
+                })
+                res.end(Buffer.from(answer.bytes))
+            }
             return
         }
 

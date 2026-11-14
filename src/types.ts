@@ -528,3 +528,181 @@ export interface SubscriptionFilters {
     limit?: number
     offset?: number
 }
+
+// ---------------------------------------------------------------------------
+// AI (the same API as @dontcode/ai's server side)
+// ---------------------------------------------------------------------------
+
+/** How much reasoning the task needs. DontCode picks the model; you never name one. */
+export type AiIntent = 'quick' | 'balanced' | 'thorough'
+
+export interface AiTextPart {
+    type: 'text'
+    text: string
+}
+
+export interface AiImagePart {
+    /** An http(s) URL, a `data:` URI, or raw base64. */
+    type: 'image'
+    image: string
+    mediaType?: string
+}
+
+export interface AiMessage {
+    role: 'user' | 'assistant' | 'system' | 'tool'
+    content: string | Array<AiTextPart | AiImagePart>
+}
+
+export interface AiUsage {
+    inputTokens: number
+    outputTokens: number
+}
+
+/** Every AI call takes its own timeout: answers take longer than the 10 s default. */
+export interface AiCallOptions {
+    /** Milliseconds before the call gives up waiting for the answer to start. Default 120 000. */
+    timeoutMs?: number
+}
+
+export interface AiChatOptions extends AiCallOptions {
+    messages: AiMessage[]
+    /** Defaults to 'balanced'. */
+    intent?: AiIntent
+    maxTokens?: number
+    system?: string
+}
+
+export interface AiChatResponse {
+    content: string
+    usage: AiUsage
+}
+
+export interface AiGenerateOptions extends AiCallOptions {
+    prompt: string
+    intent?: AiIntent
+    maxTokens?: number
+    system?: string
+}
+
+export interface AiStreamCallbacks {
+    onToken?: (token: string) => void
+    onDone?: (response: AiChatResponse) => void
+    onError?: (error: Error) => void
+}
+
+export interface AiVisionOptions extends AiCallOptions {
+    prompt: string
+    /** http(s) URLs, `data:` URIs or raw base64. */
+    images: string[]
+    intent?: AiIntent
+    system?: string
+    maxTokens?: number
+}
+
+export type AiImageQuality = 'low' | 'medium' | 'high'
+
+export interface AiImageOptions extends AiCallOptions {
+    prompt: string
+    /** Defaults to 'medium'. */
+    quality?: AiImageQuality
+    /** `{width}x{height}`. Defaults to '1024x1024'. */
+    size?: `${number}x${number}`
+    /** 1 to 4. Defaults to 1. */
+    n?: number
+}
+
+export interface AiImageResponse {
+    /** Hosted in the project's storage: permanent public URLs. */
+    images: Array<{ url: string; mediaType: string }>
+    model: string
+    quality: AiImageQuality
+    size: string
+}
+
+export type AiSpeechLanguage = 'ko' | 'en' | 'zh' | 'ja'
+export type AiSpeechVoice = 'woman-friendly' | 'woman-clear' | 'man-friendly' | 'man-clear'
+
+/** WebM, Ogg, MP4 (M4A), MP3, AAC or WAV, at most 4 MB. */
+export type AiSpeechAudio = Blob | ArrayBuffer | Uint8Array
+
+export interface AiTranscribeOptions extends AiCallOptions {
+    /** ISO 639-1 or 639-3; detected when left out. */
+    language?: string
+}
+
+export interface AiTranscribeResponse {
+    text: string
+    language: string | null
+    durationSeconds: number
+}
+
+export interface AiSpeakOptions extends AiCallOptions {
+    language: AiSpeechLanguage
+    /** Defaults to 'woman-friendly'. */
+    voice?: AiSpeechVoice
+}
+
+export interface AiSpeakResponse {
+    /** The MP3. Send it on to the browser; never store it. */
+    audio: Uint8Array
+    mediaType: 'audio/mpeg'
+    characters: number
+    voice: AiSpeechVoice
+}
+
+export interface AiTool<I = unknown, O = unknown> {
+    name: string
+    description?: string
+    /** JSON Schema of the input. */
+    parameters: Record<string, unknown>
+    /** Runs on your server; DontCode only ever sees the schema. */
+    execute: (input: I) => O | Promise<O>
+}
+
+export interface AiToolCall {
+    toolCallId: string
+    toolName: string
+    input: unknown
+}
+
+export interface AiToolResult {
+    toolCallId: string
+    toolName: string
+    output: unknown
+}
+
+export interface AiAgentOptions extends AiCallOptions {
+    messages: AiMessage[]
+    tools: AiTool[]
+    intent?: AiIntent
+    system?: string
+    maxTokens?: number
+    /** Model calls at most. Defaults to 5. */
+    maxSteps?: number
+}
+
+export interface AiAgentCallbacks {
+    onToken?: (token: string) => void
+    onToolCall?: (call: AiToolCall) => void
+    onToolResult?: (result: AiToolResult) => void
+    onStepFinish?: (info: {
+        step: number
+        text: string
+        toolCalls: AiToolCall[]
+        usage: AiUsage
+    }) => void
+    onError?: (error: Error) => void
+}
+
+export interface AiAgentResponse {
+    text: string
+    messages: AiMessage[]
+    finishReason: 'stop' | 'max-steps' | 'error'
+    usage: AiUsage
+    steps: Array<{
+        text: string
+        toolCalls: AiToolCall[]
+        toolResults: AiToolResult[]
+        usage: AiUsage
+    }>
+}
