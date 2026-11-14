@@ -423,26 +423,35 @@ if (won) await sendDailyDigest()
 
 ## Realtime
 
-Realtime pub/sub over WebSockets for live features (chat, presence, live updates). The
-SDK is the **server side**: mint a connection token for a browser, publish messages, and
-read presence. The browser opens the socket itself with the scoped token, so it never
-holds your API key. Delivery is fire-and-forget (no history/replay), so persist anything
-that needs durability to `db`.
+Realtime pub/sub over WebSockets for live features (chat, presence, live updates). Your server
+mints a channel-scoped token for a visitor it has checked, publishes and reads presence; the
+browser connects with that token, so it never holds your API key. Delivery is fire-and-forget
+(no history or replay), so persist anything that needs durability to `db`.
 
 ```ts
-const rt = client.realtime
+// Server: your token route (POST /api/realtime), after you've authenticated the user
+const conn = await client.realtime.mintToken({ channels: [`room:${id}`], identity: userId })
+return Response.json(conn) // { token, url }
 
-// In your token endpoint, after you've authenticated the user:
-const conn = await rt.mintToken({ channels: [`room:${id}`], identity: userId })
-// → send `conn` to the browser; it connects to `${conn.url}?token=${conn.token}`
-//   (use @dontcode/realtime's client `connect()` to handle the socket + reconnect)
-
-// From anywhere on your backend:
-const delivered = await rt.publish(`room:${id}`, { text: 'hello' })
-const members = await rt.presence(`room:${id}`) // [{ id, identity? }]
+// Server, anywhere
+const delivered = await client.realtime.publish(`room:${id}`, { text: 'hello' })
+const members = await client.realtime.presence(`room:${id}`) // [{ id, identity? }]
 ```
 
-A browser connection may only use the channels named when its token was minted.
+```ts
+// Browser
+import { connectRealtime } from 'dontcode/browser'
+
+const conn = await connectRealtime({ channels: [`room:${id}`] }) // POSTs /api/realtime for its token
+const stop = conn.subscribe(`room:${id}`, ({ payload }) => show(payload))
+conn.publish(`room:${id}`, { text: 'hi' }) // to everyone else on the channel
+// cleanup: stop(); conn.close()
+```
+
+The connection reconnects with backoff when the socket drops, asking your route for a fresh
+token each time. Point it elsewhere with `endpoint: '/api/my-token'`, or fetch the token your
+own way with `getToken`. A token is good for the channels it was minted for only; to use
+another channel, open another connection.
 
 ## Notifications
 

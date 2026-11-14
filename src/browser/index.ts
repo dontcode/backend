@@ -6,3 +6,5 @@
 export { renderBotCheck } from './bot-check'
 export type { BotCheck, BotCheckCallbacks } from './bot-check'
 export type { BotCheckWidget } from '../types'
+export { RealtimeConnection, connectRealtime } from './realtime'
+export type { ConnectRealtimeOptions, RealtimeHandler, RealtimeMessage } from './realtime'
