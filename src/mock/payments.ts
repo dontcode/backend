@@ -28,6 +28,7 @@ import type {
     Feature,
     FeatureInput,
     PaymentMethod,
+    SubscriptionMethod,
     PaymentReceipt,
     Plan,
     PlanInput,
@@ -79,6 +80,19 @@ export interface MockPayments {
 
 type Result = { status: number; body: unknown }
 
+/** Every one-time method the platform takes (the live list is the store's). */
+const ONE_TIME_METHODS: readonly PaymentMethod[] = [
+    'card',
+    'kakaopay',
+    'tosspay',
+    'naverpay',
+    'transfer',
+    'samsungpay',
+    'applepay',
+    'payco',
+    'paypal',
+]
+
 export function createMockPayments(opts?: {
     /** Load the persisted snapshot on boot (returns `null` for a fresh start). */
     load?: () => PaymentsSnapshot | null
@@ -129,7 +143,7 @@ export function createMockPayments(opts?: {
     function makeSubscription(input: {
         userId: string
         planId: string
-        method?: PaymentMethod
+        method?: SubscriptionMethod
         billingKey?: string
         status: SubscriptionStatus
         interval?: BillingInterval
@@ -155,7 +169,9 @@ export function createMockPayments(opts?: {
         [...subscriptions.values()].filter((s) => s.userId === userId && s.status === 'active')
 
     const liveSubs = (userId: string): Subscription[] =>
-        [...subscriptions.values()].filter((s) => s.userId === userId && LIVE_STATUSES.has(s.status))
+        [...subscriptions.values()].filter(
+            (s) => s.userId === userId && LIVE_STATUSES.has(s.status)
+        )
 
     function userFeatures(userId: string): UserFeature[] {
         const byKey = new Map<
@@ -240,11 +256,22 @@ export function createMockPayments(opts?: {
 
         switch (`${method} ${op}`) {
             // ── one-time payments ──────────────────────────────────────────
+            case 'POST methods':
+                // Offline every method is connected, international cards included.
+                return ok({
+                    oneTime: [...ONE_TIME_METHODS],
+                    subscription: ['card', 'kakaopay', 'tosspay', 'naverpay'],
+                    international: true,
+                })
+
             case 'POST request-payment': {
                 const amount = Number(body.amount ?? 0)
                 const itemName = String(body.itemName ?? '')
                 if (!amount || amount <= 0) return bad('amount is required')
                 if (!itemName) return bad('itemName is required')
+                if (!ONE_TIME_METHODS.includes(body.method as PaymentMethod)) {
+                    return bad(`Unknown payment method "${String(body.method)}"`)
+                }
                 // Placeholder popup config, matching subscribe-reserve: the mock
                 // never opens a real provider popup; `verify` trusts the id.
                 return ok({
@@ -264,7 +291,10 @@ export function createMockPayments(opts?: {
                     id: paymentId,
                     amount: Number(body.expectedAmount ?? 0),
                     currency: typeof body.currency === 'string' ? body.currency : 'KRW',
-                    method: 'card',
+                    // No provider to ask offline, so the receipt keeps the method the app names.
+                    method: ONE_TIME_METHODS.includes(body.method as PaymentMethod)
+                        ? (body.method as PaymentMethod)
+                        : 'card',
                     userId: typeof body.userId === 'string' ? body.userId : '',
                     status: 'paid',
                     refundedAmount: 0,
@@ -295,7 +325,8 @@ export function createMockPayments(opts?: {
                         ? Math.min(body.amount, remaining)
                         : remaining
                 record.refundedAmount += amount
-                record.status = record.refundedAmount >= record.amount ? 'refunded' : 'partially_refunded'
+                record.status =
+                    record.refundedAmount >= record.amount ? 'refunded' : 'partially_refunded'
                 persist()
                 return ok({
                     paymentId,
@@ -314,7 +345,7 @@ export function createMockPayments(opts?: {
                 const sub = makeSubscription({
                     userId: String(body.userId ?? ''),
                     planId: plan.id,
-                    method: body.method as PaymentMethod,
+                    method: body.method as SubscriptionMethod,
                     billingKey: typeof body.billingKey === 'string' ? body.billingKey : '',
                     status: 'active',
                     interval: plan.interval,
@@ -327,7 +358,7 @@ export function createMockPayments(opts?: {
             case 'POST subscribe-reserve': {
                 const plan = body.plan as { id?: string; interval?: BillingInterval } | undefined
                 if (!plan?.id) return bad('plan is required')
-                const method = body.method as PaymentMethod
+                const method = body.method as SubscriptionMethod
                 const sub = makeSubscription({
                     userId: String(body.userId ?? ''),
                     planId: plan.id,
@@ -410,7 +441,10 @@ export function createMockPayments(opts?: {
                 payments.set(record.id, record)
                 if (sub) {
                     sub.currentPeriodStart = sub.currentPeriodEnd
-                    sub.currentPeriodEnd = addInterval(sub.currentPeriodStart, plan?.interval ?? 'monthly')
+                    sub.currentPeriodEnd = addInterval(
+                        sub.currentPeriodStart,
+                        plan?.interval ?? 'monthly'
+                    )
                     sub.nextBillingAt = sub.currentPeriodEnd
                 }
                 persist()
@@ -526,7 +560,9 @@ export function createMockPayments(opts?: {
             case 'PUT plan-features': {
                 const planId = String(body.planId ?? '')
                 if (!planId) return bad('planId is required')
-                const links = Array.isArray(body.features) ? (body.features as PlanFeatureLink[]) : []
+                const links = Array.isArray(body.features)
+                    ? (body.features as PlanFeatureLink[])
+                    : []
                 planFeatures.set(planId, links)
                 persist()
                 return ok({})
@@ -542,8 +578,10 @@ export function createMockPayments(opts?: {
                             ? list.filter((s) => LIVE_STATUSES.has(s.status))
                             : list.filter((s) => s.status === status)
                 }
-                if (typeof body.planId === 'string') list = list.filter((s) => s.planId === body.planId)
-                if (typeof body.userId === 'string') list = list.filter((s) => s.userId === body.userId)
+                if (typeof body.planId === 'string')
+                    list = list.filter((s) => s.planId === body.planId)
+                if (typeof body.userId === 'string')
+                    list = list.filter((s) => s.userId === body.userId)
                 const total = list.length
                 const offset = Number.isFinite(Number(body.offset)) ? Number(body.offset) : 0
                 const limit = Number.isFinite(Number(body.limit)) ? Number(body.limit) : total

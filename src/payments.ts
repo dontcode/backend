@@ -1,21 +1,25 @@
+import { DontCodeError } from './errors'
 import { Transport } from './http'
 import type {
     BillingPlan,
+    CheckoutMethods,
     Feature,
     FeatureInput,
-    PaymentMethod,
     PaymentReceipt,
     Plan,
     PlanFeature,
     PlanInput,
     RefundInput,
     RefundResult,
+    RequestPaymentInput,
     RequestPaymentResult,
     ReserveSubscriptionResult,
     Subscription,
     SubscriptionFilters,
+    SubscriptionMethod,
     SubscriptionStatus,
     UserFeature,
+    VerifyPaymentInput,
 } from './types'
 
 const PAYMENTS_PATH = '/api/v1/payments'
@@ -44,31 +48,45 @@ export class PaymentsApi {
     // --- one-time payments --------------------------------------------------
 
     /**
-     * One-shot charge, step 1: create a payment intent and get the popup
-     * config (paymentId + storeId/channelKey). The customer completes the
-     * charge in the provider popup; `verify` it afterwards. The gateway owns
-     * the provider relationship, so the app never configures PortOne itself.
+     * What the owner's store takes right now: show only these methods. A
+     * method the store has not connected is refused (`CHANNEL_NOT_CONNECTED`).
      */
-    requestPayment(params: {
-        amount: number
-        itemName: string
-        method: PaymentMethod
-        currency?: string
-    }): Promise<RequestPaymentResult> {
-        return this.transport.json<RequestPaymentResult>(
-            `${PAYMENTS_PATH}/request-payment`,
-            params
-        )
+    methods(): Promise<CheckoutMethods> {
+        return this.transport.json<CheckoutMethods>(`${PAYMENTS_PATH}/methods`, {})
     }
 
-    /** Verify and record a charge the customer just completed. */
-    async verify(params: {
-        paymentId: string
-        expectedAmount: number
-        currency: string
-        description?: string
-        userId?: string
-    }): Promise<PaymentReceipt> {
+    /**
+     * One-shot charge, step 1: create a payment intent and get the popup
+     * config (paymentId + storeId/channelKey). The browser opens the payment
+     * window with it (`pay` from `dontcode/browser`, or `renderPayPal` for
+     * PayPal); `verify` it afterwards. The gateway owns the provider
+     * relationship, so the app never configures PortOne itself.
+     *
+     * A currency other than KRW needs the buyer's `customerName` and
+     * `customerEmail`, which the card processors require: without both this
+     * is refused before anything is asked (`CUSTOMER_DETAILS_REQUIRED`).
+     */
+    requestPayment(params: RequestPaymentInput): Promise<RequestPaymentResult> {
+        const currency = (params.currency ?? 'KRW').trim().toUpperCase()
+        if (currency !== 'KRW' && (!params.customerName?.trim() || !params.customerEmail?.trim())) {
+            return Promise.reject(
+                new DontCodeError(400, {
+                    error: "International payments need the buyer's name and email",
+                    code: 'CUSTOMER_DETAILS_REQUIRED',
+                })
+            )
+        }
+        return this.transport.json<RequestPaymentResult>(`${PAYMENTS_PATH}/request-payment`, {
+            ...params,
+            ...(params.currency ? { currency } : {}),
+        })
+    }
+
+    /**
+     * Verify and record a charge the customer just completed, and email the
+     * buyer their receipt. Grant nothing before it answers `status: 'paid'`.
+     */
+    async verify(params: VerifyPaymentInput): Promise<PaymentReceipt> {
         const r = await this.transport.json<{ receipt: PaymentReceipt }>(
             `${PAYMENTS_PATH}/verify`,
             params
@@ -100,7 +118,7 @@ export class PaymentsApi {
     async createSubscription(params: {
         plan: BillingPlan
         userId: string
-        method: PaymentMethod
+        method: SubscriptionMethod
         billingKey: string
     }): Promise<Subscription> {
         const r = await this.transport.json<{ subscription: Subscription }>(
@@ -114,7 +132,7 @@ export class PaymentsApi {
     reserveSubscription(params: {
         plan: BillingPlan
         userId: string
-        method: PaymentMethod
+        method: SubscriptionMethod
     }): Promise<ReserveSubscriptionResult> {
         return this.transport
             .json<{

@@ -443,8 +443,57 @@ export interface BroadcastResult {
 // Payments
 // ---------------------------------------------------------------------------
 
-/** The payment method a charge or subscription is settled with. */
-export type PaymentMethod = 'kakaopay' | 'card' | 'tosspay' | 'naverpay'
+/** The payment method a charge is settled with. */
+export type PaymentMethod =
+    | 'kakaopay'
+    | 'card'
+    | 'tosspay'
+    | 'naverpay'
+    | 'transfer'
+    | 'samsungpay'
+    | 'applepay'
+    | 'payco'
+    | 'paypal'
+
+/** What a subscription can be paid with: card and the wallets that issue a billing key. */
+export type SubscriptionMethod = 'card' | 'kakaopay' | 'tosspay' | 'naverpay'
+
+/** What the owner's store can take right now, from the channels they connected. */
+export interface CheckoutMethods {
+    /** One-time methods in KRW (and PayPal in its own currency). */
+    oneTime: PaymentMethod[]
+    subscription: SubscriptionMethod[]
+    /** Cards in another currency (`currency: 'USD'` with method `card`). */
+    international: boolean
+}
+
+/** The buyer's language: their receipt email and the payment window follow it. */
+export type PaymentLanguage = 'ko' | 'en' | 'zh' | 'ja'
+
+export interface RequestPaymentInput {
+    /** In the currency's smallest unit (KRW: won; USD: cents). */
+    amount: number
+    itemName: string
+    method: PaymentMethod
+    /** ISO 4217, default 'KRW'. Another currency takes method 'card' (or 'paypal'). */
+    currency?: string
+    /** Required for any currency but KRW: the card processors ask for them. */
+    customerName?: string
+    customerEmail?: string
+    locale?: PaymentLanguage
+}
+
+export interface VerifyPaymentInput {
+    paymentId: string
+    expectedAmount: number
+    currency: string
+    description?: string
+    /** The user who paid, for the receipt and their subscriptions and features. */
+    userId?: string
+    customerName?: string
+    customerEmail?: string
+    locale?: PaymentLanguage
+}
 
 /** A settled one-time payment. */
 export interface PaymentReceipt {
@@ -453,9 +502,17 @@ export interface PaymentReceipt {
     method: PaymentMethod
     /** The user that was charged. */
     userId: string
-    status: 'paid' | 'failed' | 'refunded'
+    /**
+     * 'pending' while the provider holds the payment for review (PayPal can):
+     * record it as pending and deliver only once a later `verify` reads 'paid'.
+     */
+    status: 'paid' | 'failed' | 'refunded' | 'pending'
     paidAt: string
     currency?: string
+    /** One of the owner's test channels took it: nothing was charged. */
+    test?: boolean
+    /** The receipt's number, when one was issued (none for a test payment). */
+    receiptNumber?: string | null
 }
 
 export interface RefundInput {
@@ -500,7 +557,7 @@ export interface Subscription {
     planId: string
     /** The user the subscription belongs to. */
     userId: string
-    method: PaymentMethod
+    method: SubscriptionMethod
     /** Opaque billing key. Empty when a subscription is read back. */
     billingKey: string
     status: SubscriptionStatus

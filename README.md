@@ -501,6 +501,76 @@ checks the caller may (an admin). `markdownText` is the only content field: ther
 > `owner@example.com`), payments and AI. The MCP server currently covers auth, database,
 > and storage.
 
+## Payments
+
+A checkout as an Insight app runs it, on the owner's own PortOne store (connected on Payments >
+Connect; until then calls fail with `PAYMENTS_NOT_CONNECTED`). Your server asks for the payment,
+the browser opens the window, your server verifies it before granting anything.
+
+```ts
+// Server: what the store takes right now (show only these)
+const { oneTime, subscription, international } = await client.payments.methods()
+
+// Server: the intent for this order (amounts in the currency's smallest unit)
+const intent = await client.payments.requestPayment({
+    amount: 9900,
+    itemName: 'Monthly box',
+    method: 'kakaopay',
+})
+```
+
+```ts
+// Browser
+import { PaymentWindowError, pay } from 'dontcode/browser'
+
+try {
+    const { paymentId } = await pay(intent, {
+        amount: 9900,
+        itemName: 'Monthly box',
+        method: 'kakaopay',
+    })
+    await fetch('/api/checkout/verify', { method: 'POST', body: JSON.stringify({ paymentId }) })
+} catch (err) {
+    if (err instanceof PaymentWindowError) showMessage(err.message) // closed or refused
+}
+```
+
+```ts
+// Server: record it, and the buyer gets their receipt by email
+const receipt = await client.payments.verify({
+    paymentId,
+    expectedAmount: 9900,
+    currency: 'KRW',
+    userId,
+})
+if (receipt.status === 'paid') deliver()
+```
+
+- **Methods:** `card`, `kakaopay`, `tosspay`, `naverpay`, `transfer`, `samsungpay`, `applepay`,
+  `payco` and `paypal`; subscriptions take `card`, `kakaopay`, `tosspay` and `naverpay`.
+- **Cards from abroad:** pass `currency: 'USD'` (any ISO code) with method `card`, the amount in
+  cents, and the buyer's `customerName` and `customerEmail`, which the card processors require;
+  without them `requestPayment` throws `CUSTOMER_DETAILS_REQUIRED` before asking anything.
+  One-time only: subscriptions are KRW.
+- **PayPal** draws its own button: ask the intent with method `'paypal'`, then
+  `renderPayPal(container, intent, order, { onApprove: (paymentId) => verifyOnServer(paymentId) })`.
+  PayPal can hold a payment for review: a receipt's `status` is then `'pending'`; record it as
+  pending and deliver once a later `verify` reads `'paid'`.
+- **Phones:** the payment company's page replaces yours there, so `pay` never answers; the buyer
+  comes back to `redirectUrl` (default: the same page) with `?paymentId=…&code=…`. Verify it on
+  that page's server, and treat a `code` as a cancelled payment.
+- **Test payments:** `receipt.test` is true when one of the owner's test channels took it:
+  nothing was charged.
+- `locale` (`'ko'`, `'en'`, `'zh'`, `'ja'`) on `requestPayment`, `verify` and `pay` sets the
+  window's and the receipt email's language.
+
+`dontcode/browser` loads PortOne's browser SDK from PortOne's own address the first time a
+window opens, so there is nothing more to install. Subscriptions (`createSubscription`,
+`reserveSubscription` → `confirmSubscription`, `cancelSubscription`), entitlements
+(`hasActiveSubscription`, `hasFeature`, `listUserFeatures`) and the plan and feature catalog
+(`definePlans`, `defineFeatures`, `setPlanFeatures`) are on `client.payments` as well. The mock
+gateway takes every method offline and never charges.
+
 ## AI
 
 The AI an Insight app's server has: chat, vision, image generation, speech and tool-using
