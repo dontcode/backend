@@ -77,10 +77,11 @@ export class DontCodeError extends Error {
 
     /**
      * True when the project's plan quota for the period is used up: the
-     * month's database reads or writes (`DB_QUOTA_EXCEEDED`), or the day's or
-     * month's emails. Unlike a rate limit, waiting and retrying is refused the
-     * same way until the period turns over or the owner moves to a bigger
-     * plan, so do not retry it; `retryAfter` is `undefined`.
+     * month's database reads or writes (`DB_QUOTA_EXCEEDED`), the app's AI
+     * for the day (`PAGE_AI_DAILY_LIMIT`, back at midnight Korean time), or
+     * the day's or month's emails. Unlike a rate limit, waiting and retrying
+     * is refused the same way until the period turns over or the owner moves
+     * to a bigger plan, so do not retry it; `retryAfter` is `undefined`.
      */
     get quotaExceeded(): boolean {
         return isQuotaRefusal(this.status, this.body)

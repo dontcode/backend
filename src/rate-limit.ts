@@ -62,7 +62,7 @@ export interface RateLimitHints {
 }
 
 /** Codes the platform sends when a plan's quota for its period is used up. */
-const QUOTA_CODES: ReadonlySet<string> = new Set(['DB_QUOTA_EXCEEDED'])
+const QUOTA_CODES: ReadonlySet<string> = new Set(['DB_QUOTA_EXCEEDED', 'PAGE_AI_DAILY_LIMIT'])
 
 /** The periods of a plan's email limits, as notifications-service names them. */
 const QUOTA_PERIODS: ReadonlySet<string> = new Set(['daily', 'monthly'])
@@ -73,10 +73,13 @@ const QUOTA_PERIODS: ReadonlySet<string> = new Set(['daily', 'monthly'])
  * rate limit clears in seconds, a quota holds until the period turns over or
  * the owner moves to a bigger plan, so waiting and retrying never helps it.
  *
- * The platform sends two shapes today: the gateway's database quota
- * (`code: 'DB_QUOTA_EXCEEDED'`, the month's reads or writes) and the email
- * service's plan limits (`limit_kind: 'daily' | 'monthly'`, passed through
- * the gateway verbatim).
+ * The platform sends three shapes today: the gateway's database quota
+ * (`code: 'DB_QUOTA_EXCEEDED'`, the month's reads or writes), the app's AI
+ * for the day (`code: 'PAGE_AI_DAILY_LIMIT'`, the AI service's answer once
+ * the daily AI limit the plan includes is used, passed through the gateway
+ * verbatim; the code is named for pages but covers every AI call) and the
+ * email service's plan limits (`limit_kind: 'daily' | 'monthly'`, passed
+ * through the gateway verbatim).
  */
 export function isQuotaRefusal(status: number, hints?: RateLimitHints): boolean {
     if (status < 400 || !hints) return false

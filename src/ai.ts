@@ -357,11 +357,13 @@ export class AiAgentApi {
 
 /**
  * AI for your server, as an Insight app's server has it (@dontcode/ai): chat, vision, image
- * generation, speech and tool-using agents, charged to the project owner's
- * DontCode credits. When they run out a call fails with a 402 DontCodeError:
- * tell the person the feature is unavailable rather than retrying. Server
- * only: the API key never reaches a browser, so a page calls your own route,
- * which checks who is asking before it spends the owner's credits.
+ * generation, speech and tool-using agents, included in the owner's plan up
+ * to the app's daily AI limit, which the plan sets and which resets at
+ * midnight Korean time. Past it a call fails with a 429 DontCodeError whose
+ * code is `PAGE_AI_DAILY_LIMIT` (`err.quotaExceeded` is true): tell the
+ * person the feature is back tomorrow rather than retrying. Server only: the
+ * API key never reaches a browser, so a page calls your own route, which
+ * checks who is asking first, so one person cannot use up everyone's day.
  */
 export class AiApi {
     readonly chat: AiChatApi

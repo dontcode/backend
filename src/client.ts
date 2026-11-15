@@ -45,7 +45,8 @@ export interface DontCodeClientOptions {
 }
 
 export interface DontCodeClient {
-    /** AI on the owner's credits: chat, vision, images, speech and agents. Server only. */
+    /** AI included in the owner's plan up to the app's daily AI limit: chat, vision, images,
+     *  speech and agents. Server only. */
     ai: AiApi
     auth: AuthApi
     db: DbClient

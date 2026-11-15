@@ -1,8 +1,7 @@
-import assert from 'node:assert/strict'
-import { afterEach, beforeEach, describe, it } from 'node:test'
-
 import { dontcode, isDontCodeError } from '../dist/index.js'
 import { startMockServer } from '../dist/mock/index.js'
+import assert from 'node:assert/strict'
+import { afterEach, beforeEach, describe, it } from 'node:test'
 
 /**
  * client.ai is @dontcode/ai's server API over /api/v1/ai. `fetch` is mocked
@@ -35,6 +34,12 @@ const events = (...list) =>
         headers: { 'content-type': 'text/event-stream' },
     })
 
+/** The AI service's answer once the app's AI for the day is used (pages and server alike). */
+const dayUsed = {
+    error: 'page_ai_daily_limit',
+    code: 'PAGE_AI_DAILY_LIMIT',
+    message: "The app's AI for today is used.",
+}
 const client = () => dontcode({ apiKey: 'dc_test' })
 const bodyOf = (call) => JSON.parse(call.init.body)
 
@@ -110,22 +115,28 @@ describe('ai.chat and generate', () => {
         assert.match(seen.message, /overloaded/)
     })
 
-    it("fails with a 402 when the owner's credits are out", async () => {
-        answers.push(json({ error: 'Insufficient credits', code: 'INSUFFICIENT_CREDITS' }, 402))
+    it("fails with a 429 quota, never retried, once the app's AI for the day is used", async () => {
+        answers.push(json(dayUsed, 429))
 
         await assert.rejects(
             () => client().ai.chat.send({ messages: [] }),
             (err) =>
-                isDontCodeError(err) && err.status === 402 && err.code === 'INSUFFICIENT_CREDITS'
+                isDontCodeError(err) &&
+                err.status === 429 &&
+                err.code === 'PAGE_AI_DAILY_LIMIT' &&
+                err.quotaExceeded === true &&
+                err.rateLimited === false &&
+                err.retryAfter === undefined
         )
+        assert.equal(calls.length, 1)
     })
 
     it('fails a stream that is refused before it starts, with the same error', async () => {
-        answers.push(json({ error: 'Insufficient credits' }, 402))
+        answers.push(json(dayUsed, 429))
 
         await assert.rejects(
             () => client().ai.chat.stream({ messages: [] }),
-            (err) => isDontCodeError(err) && err.status === 402
+            (err) => isDontCodeError(err) && err.status === 429 && err.quotaExceeded === true
         )
     })
 
@@ -310,7 +321,7 @@ describe('ai.agent.run', () => {
     })
 
     it('ends with error when a step is refused, keeping what came before', async () => {
-        answers.push(json({ error: 'Insufficient credits' }, 402))
+        answers.push(json(dayUsed, 429))
         let seen
 
         const run = await client().ai.agent.run(
@@ -319,7 +330,8 @@ describe('ai.agent.run', () => {
         )
 
         assert.equal(run.finishReason, 'error')
-        assert.equal(seen.status, 402)
+        assert.equal(seen.status, 429)
+        assert.equal(seen.code, 'PAGE_AI_DAILY_LIMIT')
     })
 })
 

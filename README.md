@@ -233,13 +233,14 @@ under attack. The check is drawn in the visitor's browser and its token rides yo
 call. Tell the client your forms draw it, and the platform starts asking:
 
 ```ts
+// Browser: draw it, keep the token (dontcode/browser)
+import { renderBotCheck } from 'dontcode/browser'
+
 const client = dontcode({ botCheck: true }) // { mfa: true } once your MFA form draws it too
 
 // Server: what the browser needs, and which forms show it while the switch is on
 const { enabled, surfaces, widget } = await client.auth.captchaConfig()
 
-// Browser: draw it, keep the token (dontcode/browser)
-import { renderBotCheck } from 'dontcode/browser'
 const check = await renderBotCheck(document.getElementById('bot-check')!, widget!, {
     onToken: (token) => (form.captchaToken.value = token),
 })
@@ -594,17 +595,29 @@ gateway takes every method offline and never charges.
 ## AI
 
 AI for your server, as an Insight app's server has it: chat, vision, image generation, speech and tool-using
-agents. Every call is charged to the project owner's DontCode credits; when they run out a
-call fails with a `402` DontCodeError, so tell the person the feature is unavailable rather
-than retrying. DontCode picks the model for the `intent` (`'quick'`, `'balanced'` (default)
-or `'thorough'`); you never name one. Server only: a page calls your own route, which checks
-who is asking before it spends the owner's credits.
+agents. AI is included in the owner's plan, up to the app's daily AI limit: the plan sets it
+and it resets at midnight Korean time. Past it a call fails with a `429` DontCodeError whose
+`code` is `PAGE_AI_DAILY_LIMIT` (`err.quotaExceeded` is `true`), so tell the person the
+feature is back tomorrow rather than retrying; a bigger plan includes more. DontCode picks the
+model for the `intent` (`'quick'`, `'balanced'` (default) or `'thorough'`); you never name
+one. Server only: a page calls your own route, which checks who is asking first, so one
+person cannot use up everyone's day.
 
 ```ts
 const tagline = await client.ai.generate({
     prompt: 'A tagline for a Seoul bakery',
     intent: 'quick',
 })
+
+// Past the app's daily AI limit
+try {
+    await client.ai.chat.send({ messages })
+} catch (err) {
+    if (isDontCodeError(err) && err.code === 'PAGE_AI_DAILY_LIMIT') {
+        return reply('This feature is unavailable for the rest of today. Please try again tomorrow.')
+    }
+    throw err
+}
 
 const { content } = await client.ai.chat.send({ messages, system: 'Answer in Korean.' })
 
@@ -651,8 +664,9 @@ const run = await client.ai.agent.run({
 
 Voices are `woman-friendly` (default), `woman-clear`, `man-friendly` and `man-clear` in
 Korean, English, Chinese and Japanese. AI calls wait up to two minutes for an answer to
-start (pass `timeoutMs` to change it); the `ai` budget is 300 calls a minute. Offline, the
-mock gateway answers every call in the same shapes with no model and no credits: chat echoes
+start (pass `timeoutMs` to change it); the `ai` budget is 300 calls a minute and only stops a
+runaway loop, while the daily AI limit is the meter. Offline, the mock gateway answers every
+call in the same shapes with no model and none of the day's AI used: chat echoes
 `Mock answer to: …`, speech is a quarter second of silence.
 
 ## Errors
@@ -728,8 +742,8 @@ one.
 
 ### Plan quotas
 
-A plan also caps each period: a month's database reads and writes, and a day's and a month's
-emails. Once one is used up, those calls are refused with a `429` too, but a quota is not a rate
+A plan also caps each period: a month's database reads and writes, a day's AI
+(`PAGE_AI_DAILY_LIMIT`, see [AI](#ai)), and a day's and a month's emails. Once one is used up, those calls are refused with a `429` too, but a quota is not a rate
 limit: waiting a few seconds does not clear it, only the period starting over or the owner moving
 to a bigger plan does. The SDK tells them apart, so `err.quotaExceeded` is `true`,
 `err.rateLimited` is `false` and `err.retryAfter` is `undefined`; the per-minute budget the

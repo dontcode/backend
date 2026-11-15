@@ -1,6 +1,6 @@
 /**
  * The mock gateway's AI: answers in the shapes the live AI service gives, with
- * no model behind them and no credits spent, so an app's AI features run
+ * no model behind them and none of the app's daily AI used, so its AI features run
  * offline. Chat echoes what it was asked, so a page shows something that
  * changes with its input; a stream sends that answer a word at a time; an
  * agent step calls no tool; speech answers a fixed line and a quarter second
