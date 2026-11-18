@@ -30,6 +30,8 @@ const client = dontcode()
 await client.auth.signup({
     email: 'tester@example.com',
     password: 'a-strong-password',
+    // Given only when the role's Accept sign-ups switch is on (Users > User
+    // roles, off until you turn it on); otherwise the default role.
     role: 'editor',
 })
 ```
@@ -100,6 +102,9 @@ const client = dontcode({ baseUrl: mock.url, apiKey: 'dc_test' })
 // … exercise the client …
 await mock.close()
 ```
+
+Like a new project, the mock gives no role at sign-up until it is switched on: pass
+`signupRoles: ['editor']` for the roles whose Accept sign-ups switch your project has on.
 
 ## MCP server (Claude Code and other AI tools)
 

@@ -56,6 +56,13 @@ export interface MockServerOptions {
     schema?: string
     /** Suppress the startup banner and request logging. Default false. */
     quiet?: boolean
+    /**
+     * The roles a visitor may pick at sign-up, as if their Accept sign-ups
+     * switch were on in Users > User roles. Default none, as a new project
+     * starts: a `role` sent to `signup` for any other role is ignored, as the
+     * live gateway gives that person the default role.
+     */
+    signupRoles?: readonly string[]
 }
 
 export interface MockServer {
@@ -193,6 +200,7 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
     const host = options.host ?? '127.0.0.1'
     const schema = options.schema ?? 'public'
     const quiet = options.quiet ?? false
+    const signupRoles = new Set(options.signupRoles ?? [])
     const ephemeral = options.dataDir === null
     const dataDir = ephemeral
         ? mkdtempSync(join(tmpdir(), 'dontcode-mock-'))
@@ -574,7 +582,11 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
                     id: randomUUID(),
                     email,
                     password,
-                    role: typeof body.role === 'string' ? body.role : undefined,
+                    // Only a role switched on at sign-up, as on the live gateway.
+                    role:
+                        typeof body.role === 'string' && signupRoles.has(body.role)
+                            ? body.role
+                            : undefined,
                     verified: true,
                 }
                 users.set(email.toLowerCase(), user)

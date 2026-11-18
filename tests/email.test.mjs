@@ -146,7 +146,12 @@ describe('email.ownerAddress', () => {
 describe('mock gateway: email offline', () => {
     it('checks recipients and roles the way the service does', async () => {
         globalThis.fetch = realFetch
-        const mock = await startMockServer({ dataDir: null, quiet: true, port: 0 })
+        const mock = await startMockServer({
+            dataDir: null,
+            quiet: true,
+            port: 0,
+            signupRoles: ['buyer'],
+        })
         try {
             const c = dontcode({ baseUrl: mock.url, apiKey: 'dc_test' })
             const { userId } = await c.auth.signup({

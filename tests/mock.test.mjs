@@ -450,3 +450,30 @@ describe('mock gateway — payments', () => {
         assert.equal(cancelled.status, 'active', 'soft cancel keeps access through the period')
     })
 })
+
+describe('mock gateway: the role a visitor asks for at sign-up', () => {
+    // On the live gateway a role is given at sign-up only when its Accept
+    // sign-ups switch is on (Users > User roles); otherwise the default role.
+    it('gives a role only when it is switched on, as a new project starts with none', async () => {
+        const open = await startMockServer({
+            dataDir: null,
+            quiet: true,
+            port: 0,
+            signupRoles: ['editor'],
+        })
+        try {
+            const c = dontcode({ baseUrl: open.url, apiKey: 'dc_test' })
+            for (const [email, role, expected] of [
+                ['ed@example.com', 'editor', 'editor'],
+                ['own@example.com', 'owner', undefined],
+            ]) {
+                await c.auth.signup({ email, password: 'pw123456', role })
+                const { tokens } = await c.auth.login({ email, password: 'pw123456' })
+                const { user } = await c.auth.getSession({ accessToken: tokens.AccessToken })
+                assert.equal(user.role, expected)
+            }
+        } finally {
+            await open.close()
+        }
+    })
+})
