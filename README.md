@@ -635,11 +635,18 @@ const { images } = await client.ai.image.generate({
 })
 // images[0].url is hosted in the project's storage, permanently
 
-// Speech: a recording (≤ 4 MB) in, text out; text (≤ 2,500 characters) in, an MP3 out
-const { text } = await client.ai.speech.transcribe(await file.arrayBuffer(), { language: 'ko' })
+// Speech: a recording (≤ 4 MB) in, text out; text (≤ 2,500 characters) in, an MP3 out.
+// Before a person first records or is read to, show them the speech notice, and send the
+// version they accepted (kept in a cookie, say) with every call.
+const notice = await client.ai.speech.notice() // { version, words: { en, ko, zh, ja } }
+const { text } = await client.ai.speech.transcribe(await file.arrayBuffer(), {
+    language: 'ko',
+    notice: acceptedVersion,
+})
 const { audio } = await client.ai.speech.speak('주문이 접수되었습니다', {
     language: 'ko',
     voice: 'woman-clear',
+    notice: acceptedVersion,
 })
 return new Response(audio, { headers: { 'Content-Type': 'audio/mpeg' } }) // never store it
 
@@ -668,6 +675,14 @@ start (pass `timeoutMs` to change it); the `ai` budget is 300 calls a minute and
 runaway loop, while the daily AI limit is the meter. Offline, the mock gateway answers every
 call in the same shapes with no model and none of the day's AI used: chat echoes
 `Mock answer to: …`, speech is a quarter second of silence.
+
+The speech notice tells a person who processes their speech. DontCode words it, in Korean,
+English, Chinese and Japanese, and changes it when that changes: `words[lang].text` is the
+notice, `accept` and `decline` its two buttons. Show it before a person's first recording or
+reply, keep the `version` they accepted, and send it as `notice`. A call without the current
+version throws a `DontCodeError` with status 409 and code `SPEECH_NOTICE_REQUIRED`, its
+`body.notice` the current notice: show it and try again. The mock gateway's notice is version
+`mock`, with placeholder words.
 
 ## Errors
 

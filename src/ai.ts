@@ -13,6 +13,7 @@ import type {
     AiSpeakOptions,
     AiSpeakResponse,
     AiSpeechAudio,
+    AiSpeechNotice,
     AiSpeechVoice,
     AiStreamCallbacks,
     AiToolCall,
@@ -32,6 +33,18 @@ const ZERO: AiUsage = { inputTokens: 0, outputTokens: 0 }
 
 function callOptions(options: AiCallOptions): RequestOptions {
     return { timeoutMs: options.timeoutMs ?? AI_TIMEOUT_MS }
+}
+
+/** The version of the speech notice the person accepted, on every speech call. */
+const SPEECH_NOTICE_HEADER = 'X-DontCode-Speech-Notice'
+
+function speechCallOptions(options: AiCallOptions & { notice: string }): RequestOptions {
+    return {
+        ...callOptions(options),
+        headers: {
+            [SPEECH_NOTICE_HEADER]: typeof options.notice === 'string' ? options.notice : '',
+        },
+    }
 }
 
 /** The `data: {...}` events of a server-sent stream, `[DONE]` and junk lines skipped. */
@@ -171,14 +184,23 @@ export class AiImageApi {
     }
 }
 
-/** Speech: a recording in, what was said out; text in, the MP3 of it spoken out. */
+/**
+ * Speech: a recording in, what was said out; text in, the MP3 of it spoken out. Before a person
+ * first records or is read to, show them the speech notice (`notice()`) and send the version
+ * they accepted on every call.
+ */
 export class AiSpeechApi {
     constructor(private readonly transport: Transport) {}
+
+    /** The speech notice to show a person before they first record or are read to. */
+    notice(options: AiCallOptions = {}): Promise<AiSpeechNotice> {
+        return this.transport.get<AiSpeechNotice>(`${AI_BASE}/speech/notice`, callOptions(options))
+    }
 
     /** Sent as multipart, never base64. At most 4 MB. */
     async transcribe(
         audio: AiSpeechAudio,
-        options: AiTranscribeOptions = {}
+        options: AiTranscribeOptions
     ): Promise<AiTranscribeResponse> {
         const form = new FormData()
         const blob = asBlob(audio)
@@ -187,7 +209,7 @@ export class AiSpeechApi {
         const res = await this.transport.raw(
             `${AI_BASE}/speech/transcribe`,
             form,
-            callOptions(options)
+            speechCallOptions(options)
         )
         const body = (await res.json()) as Partial<AiTranscribeResponse>
         return {
@@ -202,7 +224,7 @@ export class AiSpeechApi {
         const res = await this.transport.raw(
             `${AI_BASE}/speech/speak`,
             JSON.stringify({ text, language: options.language, voice: options.voice }),
-            callOptions(options)
+            speechCallOptions(options)
         )
         const audio = new Uint8Array(await res.arrayBuffer())
         const characters = Number(res.headers.get('x-dontcode-characters'))

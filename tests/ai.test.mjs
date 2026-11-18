@@ -197,9 +197,13 @@ describe('ai.speech', () => {
         const buffer = new Uint8Array([9, 9, 1, 2, 3, 9])
         const view = buffer.subarray(2, 5)
 
-        const result = await client().ai.speech.transcribe(view, { language: 'ko' })
+        const result = await client().ai.speech.transcribe(view, {
+            language: 'ko',
+            notice: '2026-11-18',
+        })
 
         assert.equal(calls[0].url, 'https://backend.dontcode.co/api/v1/ai/speech/transcribe')
+        assert.equal(calls[0].init.headers['X-DontCode-Speech-Notice'], '2026-11-18')
         const form = calls[0].init.body
         assert.ok(form instanceof FormData)
         assert.equal(form.get('language'), 'ko')
@@ -226,8 +230,10 @@ describe('ai.speech', () => {
         const result = await client().ai.speech.speak('안녕하세요', {
             language: 'ko',
             voice: 'man-clear',
+            notice: '2026-11-18',
         })
 
+        assert.equal(calls[0].init.headers['X-DontCode-Speech-Notice'], '2026-11-18')
         assert.deepEqual(bodyOf(calls[0]), {
             text: '안녕하세요',
             language: 'ko',
@@ -237,6 +243,36 @@ describe('ai.speech', () => {
         assert.equal(result.mediaType, 'audio/mpeg')
         assert.equal(result.characters, 5)
         assert.equal(result.voice, 'man-clear')
+    })
+
+    it('reads the speech notice with GET', async () => {
+        const notice = {
+            version: '2026-11-18',
+            words: { en: { text: 't', accept: 'a', decline: 'd' } },
+        }
+        answers.push(json(notice))
+
+        assert.deepEqual(await client().ai.speech.notice(), notice)
+        assert.equal(calls[0].url, 'https://backend.dontcode.co/api/v1/ai/speech/notice')
+        assert.equal(calls[0].init.method, 'GET')
+    })
+
+    it("sends '' when a caller leaves the notice out, for the gateway to refuse", async () => {
+        answers.push(json({ text: '', language: null, durationSeconds: 0 }))
+        await client().ai.speech.transcribe(new Uint8Array([1]), {})
+        assert.equal(calls[0].init.headers['X-DontCode-Speech-Notice'], '')
+    })
+
+    it('throws the refusal of an old notice with the current one in its body', async () => {
+        const notice = { version: '2026-11-18', words: {} }
+        answers.push(json({ error: 'not seen', code: 'SPEECH_NOTICE_REQUIRED', notice }, 409))
+        const error = await client()
+            .ai.speech.speak('hi', { language: 'en', notice: 'old' })
+            .catch((e) => e)
+        assert.ok(isDontCodeError(error))
+        assert.equal(error.status, 409)
+        assert.equal(error.code, 'SPEECH_NOTICE_REQUIRED')
+        assert.deepEqual(error.body.notice, notice)
     })
 })
 
@@ -353,14 +389,29 @@ describe('mock gateway: AI offline', () => {
             assert.equal(streamed.content, 'Mock answer to: Say hi')
             assert.ok(tokens.length > 1)
 
-            const spoken = await c.ai.speech.speak('Hello', { language: 'en' })
+            const notice = await c.ai.speech.notice()
+            assert.equal(notice.version, 'mock')
+            assert.deepEqual(Object.keys(notice.words).sort(), ['en', 'ja', 'ko', 'zh'])
+
+            const spoken = await c.ai.speech.speak('Hello', {
+                language: 'en',
+                notice: notice.version,
+            })
             assert.equal(spoken.audio.byteLength, 1040)
             assert.equal(spoken.characters, 5)
 
             const heard = await c.ai.speech.transcribe(new Uint8Array([1, 2, 3]), {
                 language: 'ko',
+                notice: notice.version,
             })
             assert.equal(heard.language, 'ko')
+
+            const refused = await c.ai.speech
+                .speak('Hello', { language: 'en', notice: 'old' })
+                .catch((e) => e)
+            assert.equal(refused.status, 409)
+            assert.equal(refused.code, 'SPEECH_NOTICE_REQUIRED')
+            assert.deepEqual(refused.body.notice, notice)
 
             const run = await c.ai.agent.run({
                 messages: [{ role: 'user', content: 'Help' }],

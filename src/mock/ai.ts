@@ -5,6 +5,12 @@
  * changes with its input; a stream sends that answer a word at a time; an
  * agent step calls no tool; speech answers a fixed line and a quarter second
  * of silent MP3 (the Insight SDK's test-world answers).
+ *
+ * Speech is held to the speech notice as the live gateway holds it: the mock
+ * answers its own notice (version 'mock', placeholder words, never the live
+ * ones, which DontCode keeps beside its provider) and refuses a speech call
+ * that does not carry that version, so an app that forgets the notice finds
+ * out offline.
  */
 
 export type MockAiAnswer =
@@ -56,7 +62,53 @@ function mockAnswer(question: string): string {
 
 const NO_USAGE = { inputTokens: 0, outputTokens: 0 }
 
-export function answerAi(operation: string, raw: Buffer, contentType: string): MockAiAnswer {
+/** The mock's speech notice: the live shape, placeholder words. */
+export const MOCK_SPEECH_NOTICE = {
+    version: 'mock',
+    words: {
+        en: {
+            text: 'Mock speech notice. The live gateway answers the real words.',
+            accept: 'Continue',
+            decline: 'Not now',
+        },
+        ko: {
+            text: '모의 음성 안내입니다. 실제 문구는 라이브 게이트웨이가 제공합니다.',
+            accept: '계속',
+            decline: '나중에',
+        },
+        zh: {
+            text: '模拟语音提示。实际文字由线上网关提供。',
+            accept: '继续',
+            decline: '暂不',
+        },
+        ja: {
+            text: '模擬の音声のお知らせです。実際の文言はライブのゲートウェイが返します。',
+            accept: '続ける',
+            decline: '今はしない',
+        },
+    },
+} as const
+
+const SPEECH_OPERATIONS = new Set(['speech/transcribe', 'speech/speak'])
+
+export function answerAi(
+    operation: string,
+    raw: Buffer,
+    contentType: string,
+    notice?: string
+): MockAiAnswer {
+    if (SPEECH_OPERATIONS.has(operation) && notice !== MOCK_SPEECH_NOTICE.version) {
+        return {
+            kind: 'json',
+            status: 409,
+            body: {
+                error: 'This person has not seen the current speech notice',
+                code: 'SPEECH_NOTICE_REQUIRED',
+                notice: MOCK_SPEECH_NOTICE,
+            },
+        }
+    }
+
     if (operation === 'speech/transcribe') {
         if (!contentType.startsWith('multipart/form-data')) {
             return { kind: 'json', status: 400, body: { error: 'audio is required' } }

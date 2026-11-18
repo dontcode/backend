@@ -764,9 +764,31 @@ export type AiSpeechVoice = 'woman-friendly' | 'woman-clear' | 'man-friendly' | 
 /** WebM, Ogg, MP4 (M4A), MP3, AAC or WAV, at most 4 MB. */
 export type AiSpeechAudio = Blob | ArrayBuffer | Uint8Array
 
+/** The speech notice's words in one language: the notice, and its two buttons. */
+export interface AiSpeechNoticeWords {
+    text: string
+    accept: string
+    decline: string
+}
+
+/**
+ * What a person is told before they first record or are read to: who processes their speech.
+ * DontCode words it; show it your own way, keep the `version` the person accepted, and send it
+ * as `notice` on every speech call. A new version (a new provider, new words) asks again.
+ */
+export interface AiSpeechNotice {
+    version: string
+    words: Record<AiSpeechLanguage, AiSpeechNoticeWords>
+}
+
 export interface AiTranscribeOptions extends AiCallOptions {
     /** ISO 639-1 or 639-3; detected when left out. */
     language?: string
+    /**
+     * The version of the speech notice (`ai.speech.notice()`) the person whose recording this is
+     * accepted. A call without the current version is refused (409 `SPEECH_NOTICE_REQUIRED`).
+     */
+    notice: string
 }
 
 export interface AiTranscribeResponse {
@@ -779,6 +801,11 @@ export interface AiSpeakOptions extends AiCallOptions {
     language: AiSpeechLanguage
     /** Defaults to 'woman-friendly'. */
     voice?: AiSpeechVoice
+    /**
+     * The version of the speech notice (`ai.speech.notice()`) the person this is read to
+     * accepted. A call without the current version is refused (409 `SPEECH_NOTICE_REQUIRED`).
+     */
+    notice: string
 }
 
 export interface AiSpeakResponse {

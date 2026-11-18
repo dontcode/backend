@@ -21,7 +21,7 @@
  * It is a DEV tool: passwords are stored in plaintext, tokens are unsigned,
  * and there is no rate limiting. Never expose it to a network you don't trust.
  */
-import { answerAi } from './ai'
+import { answerAi, MOCK_SPEECH_NOTICE } from './ai'
 import { createMockCache } from './cache'
 import { executeDbOperation, type Queryable } from './db-query'
 import { createMockNotifications } from './notifications'
@@ -455,11 +455,18 @@ export async function startMockServer(options: MockServerOptions = {}): Promise<
             return
         }
 
+        if (path === '/api/v1/ai/speech/notice' && method === 'GET') {
+            sendJson(res, 200, MOCK_SPEECH_NOTICE)
+            return
+        }
+
         if (path.startsWith('/api/v1/ai/') && method === 'POST') {
+            const notice = req.headers['x-dontcode-speech-notice']
             const answer = answerAi(
                 path.slice('/api/v1/ai/'.length),
                 raw,
-                String(req.headers['content-type'] ?? '')
+                String(req.headers['content-type'] ?? ''),
+                typeof notice === 'string' ? notice : undefined
             )
             if (answer.kind === 'json') {
                 sendJson(res, answer.status, answer.body)
